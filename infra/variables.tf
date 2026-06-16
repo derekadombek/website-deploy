@@ -25,11 +25,17 @@ variable "hosted_zone_name" {
 variable "github_repo" {
   description = "GitHub repo allowed to assume the deploy role, in 'owner/name' form."
   type        = string
-  default     = "derekadombek/static-site-deploy-pipeline"
+  default     = "derekadombek/website-deploy"
 }
 
 variable "github_branch" {
   description = "Branch allowed to deploy (restricts the OIDC trust policy)."
   type        = string
   default     = "main"
+}
+
+variable "create_oidc_provider" {
+  description = "Create the account-level GitHub OIDC provider. Set false to reuse an existing one."
+  type        = bool
+  default     = true
 }

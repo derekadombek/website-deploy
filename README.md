@@ -54,11 +54,12 @@ identical site for another business is a `terraform apply` with a different doma
 
 | Practice | Where |
 |---|---|
-| Infrastructure as Code | [`infra/`](infra/) — S3, CloudFront, ACM, Route 53, IAM all in Terraform |
-| Private origin (no public bucket) | [`infra/s3.tf`](infra/s3.tf) + CloudFront **Origin Access Control** |
-| Automated TLS | [`infra/acm.tf`](infra/acm.tf) — DNS-validated ACM cert, auto-renewing |
+| Infrastructure as Code | [`infra/`](infra/) — composed from reusable modules |
+| Reusable modules | [`infra/modules/`](infra/modules/) — `static_site`, `acm_certificate`, `github_oidc` |
+| Private origin (no public bucket) | [`modules/static_site`](infra/modules/static_site/) + CloudFront **Origin Access Control** |
+| Automated TLS | [`modules/acm_certificate`](infra/modules/acm_certificate/) — DNS-validated, auto-renewing |
 | CI/CD | [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) |
-| Keyless cloud auth | [`infra/iam.tf`](infra/iam.tf) — GitHub **OIDC**, least-privilege role |
+| Keyless cloud auth | [`modules/github_oidc`](infra/modules/github_oidc/) — GitHub **OIDC**, least-privilege role |
 | Cache strategy | long-cache assets, no-cache HTML, invalidate on deploy |
 | Reproducibility | pinned providers (`.terraform.lock.hcl`), tagged resources |
 
@@ -67,10 +68,18 @@ identical site for another business is a `terraform apply` with a different doma
 ## Repo layout
 
 ```
-site/                 The static website (what gets deployed)
-infra/                Terraform for the whole hosting stack
-.github/workflows/    deploy.yml (publish) + terraform.yml (validate/plan)
+site/                       The static website (what gets deployed)
+infra/                      Thin root that composes three modules:
+  main.tf                     wires modules + DNS together
+  modules/static_site/        private S3 + CloudFront (OAC) + bucket policy
+  modules/acm_certificate/    ACM cert + DNS validation (us-east-1)
+  modules/github_oidc/        OIDC provider + least-privilege deploy role
+.github/workflows/          deploy.yml (publish) + terraform.yml (validate/plan)
 ```
+
+Each module is self-contained with its own `variables`/`outputs`, so adding a
+second site is a matter of calling `module "static_site"` again with a different
+domain — the reason it's split this way.
 
 ## Prerequisites
 

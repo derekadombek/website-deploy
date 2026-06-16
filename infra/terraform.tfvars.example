@@ -4,5 +4,8 @@ project_name     = "bobs-fishing-tours"
 aws_region       = "us-east-1"
 site_domain      = "bob.derekadombek.com"
 hosted_zone_name = "derekadombek.com"
-github_repo      = "derekadombek/static-site-deploy-pipeline"
+github_repo      = "derekadombek/website-deploy"
 github_branch    = "main"
+
+# Set false if your AWS account already has a GitHub OIDC provider.
+create_oidc_provider = true
