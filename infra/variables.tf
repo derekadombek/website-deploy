@@ -7,7 +7,7 @@ variable "project_name" {
 variable "aws_region" {
   description = "Region for non-CloudFront resources (S3 bucket, etc.)."
   type        = string
-  default     = "us-east-1"
+  default     = "us-west-2"
 }
 
 variable "site_domain" {

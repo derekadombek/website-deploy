@@ -12,13 +12,13 @@ terraform {
   # Once you have a state bucket + lock table, uncomment and `terraform init
   # -migrate-state`. Left local by default so the demo runs with zero setup.
   #
-  # backend "s3" {
-  #   bucket         = "my-tf-state-bucket"
-  #   key            = "static-site-deploy-pipeline/terraform.tfstate"
-  #   region         = "us-east-1"
-  #   dynamodb_table = "my-tf-locks"
-  #   encrypt        = true
-  # }
+  backend "s3" {
+    bucket         = "website-deploy-tf-state-west"
+    key            = "website-deploy/terraform.tfstate"
+    region         = "us-west-2"
+    dynamodb_table = "website-deploy-tf-locks"
+    encrypt        = true
+  }
 }
 
 # Default provider — most resources live here.

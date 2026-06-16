@@ -3,8 +3,12 @@
 
 # --- S3 (private origin) ----------------------------------------------------
 
+# Bucket name is decoupled from the public domain on purpose: S3 names are
+# globally unique and a deleted name takes time to free, so reusing the domain
+# as the bucket name makes delete/recreate (and region moves) stall. CloudFront
+# uses the bucket's regional endpoint as origin, so the name is internal-only.
 resource "aws_s3_bucket" "site" {
-  bucket = var.site_domain
+  bucket = "${var.name_prefix}-site"
 }
 
 resource "aws_s3_bucket_ownership_controls" "site" {
