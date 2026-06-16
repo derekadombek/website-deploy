@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars and adjust. terraform.tfvars is gitignored.
+
+project_name     = "bobs-fishing-tours"
+aws_region       = "us-east-1"
+site_domain      = "bob.derekadombek.com"
+hosted_zone_name = "derekadombek.com"
+github_repo      = "derekadombek/static-site-deploy-pipeline"
+github_branch    = "main"

@@ -1,0 +1,49 @@
+name: Terraform
+
+# Lint + validate on every change to the infra, and show a plan on PRs so
+# infrastructure changes are reviewable before anyone applies them.
+on:
+  push:
+    branches: [main]
+    paths: ["infra/**", ".github/workflows/terraform.yml"]
+  pull_request:
+    paths: ["infra/**", ".github/workflows/terraform.yml"]
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Format check
+        run: terraform fmt -check -recursive
+
+      - name: Init (no backend)
+        run: terraform init -backend=false
+
+      - name: Validate
+        run: terraform validate
+
+      # A plan needs AWS access + remote state. Enable once those exist by
+      # configuring the OIDC role and uncommenting below.
+      #
+      # - name: Configure AWS credentials (OIDC)
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   with:
+      #     role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+      #     aws-region: ${{ vars.AWS_REGION }}
+      #
+      # - name: Plan
+      #   run: terraform plan -no-color

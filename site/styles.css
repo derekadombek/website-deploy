@@ -1,0 +1,84 @@
+:root {
+  --deep: #0b3d59;
+  --sea: #1f7a8c;
+  --foam: #e8f4f7;
+  --sand: #f6f1e7;
+  --ink: #16242b;
+  --maxw: 1000px;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+* { margin: 0; }
+body {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--ink);
+  line-height: 1.6;
+  background: #fff;
+}
+img { display: block; max-width: 100%; }
+a { color: var(--sea); }
+
+.wrap { width: min(100% - 2rem, var(--maxw)); margin-inline: auto; }
+
+/* Header */
+.site-header {
+  position: sticky;
+  top: 0;
+  background: rgba(11, 61, 89, 0.97);
+  backdrop-filter: blur(6px);
+  z-index: 10;
+}
+.nav { display: flex; align-items: center; justify-content: space-between; padding: 0.9rem 0; }
+.brand { color: #fff; font-weight: 700; font-size: 1.15rem; text-decoration: none; }
+.nav nav { display: flex; align-items: center; gap: 1.25rem; }
+.nav nav a { color: var(--foam); text-decoration: none; }
+.nav nav a:hover { color: #fff; }
+
+/* Buttons */
+.btn {
+  display: inline-block;
+  background: var(--sea);
+  color: #fff;
+  padding: 0.8rem 1.6rem;
+  border-radius: 10px;
+  text-decoration: none;
+  font-weight: 600;
+  transition: background 0.2s ease, transform 0.2s ease;
+}
+.btn:hover { background: var(--deep); transform: translateY(-2px); }
+.btn-sm { padding: 0.5rem 1rem; }
+
+/* Hero */
+.hero {
+  background: linear-gradient(135deg, var(--deep), var(--sea));
+  color: #fff;
+  padding: clamp(3rem, 12vw, 7rem) 0;
+  text-align: center;
+}
+.hero h1 { font-size: clamp(2rem, 6vw, 3.25rem); line-height: 1.1; }
+.hero .lead { max-width: 46ch; margin: 1.25rem auto 2rem; font-size: clamp(1.05rem, 2.6vw, 1.25rem); color: var(--foam); }
+
+/* Sections */
+.section { padding: clamp(2.5rem, 8vw, 5rem) 0; }
+.section-alt { background: var(--sand); }
+.section h2 { font-size: clamp(1.5rem, 4vw, 2.25rem); text-align: center; color: var(--deep); margin-bottom: 2rem; }
+
+/* Cards */
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 1.5rem; }
+.card {
+  background: #fff;
+  border: 1px solid #e0e0e0;
+  border-radius: 16px;
+  padding: 2rem;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
+  text-align: center;
+}
+.card h3 { color: var(--sea); margin-bottom: 0.5rem; }
+.card .price { font-size: 1.75rem; font-weight: 700; color: var(--deep); margin-bottom: 0.5rem; }
+
+.about, .book { max-width: 60ch; margin-inline: auto; text-align: center; }
+.book .contact { margin-top: 1rem; font-size: 1.1rem; display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; }
+
+/* Footer */
+.site-footer { background: var(--deep); color: var(--foam); text-align: center; padding: 2.5rem 0; }
+.site-footer .tiny { font-size: 0.85rem; opacity: 0.7; margin-top: 0.5rem; }
