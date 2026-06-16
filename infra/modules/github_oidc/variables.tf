@@ -29,3 +29,13 @@ variable "distribution_arn" {
   description = "ARN of the CloudFront distribution the deploy role may invalidate."
   type        = string
 }
+
+variable "tf_state_bucket" {
+  description = "Name of the S3 bucket holding Terraform remote state (scopes the CI Terraform role's state access)."
+  type        = string
+}
+
+variable "tf_lock_table" {
+  description = "Name of the DynamoDB table used for Terraform state locking."
+  type        = string
+}

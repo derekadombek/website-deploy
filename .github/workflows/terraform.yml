@@ -1,7 +1,7 @@
 name: Terraform
 
-# Lint + validate on every change to the infra, and show a plan on PRs so
-# infrastructure changes are reviewable before anyone applies them.
+# Validate every infra change, show a plan on PRs for review, and apply on
+# merge to main — with a manual approval gate in front of apply.
 on:
   push:
     branches: [main]
@@ -10,40 +10,86 @@ on:
     paths: ["infra/**", ".github/workflows/terraform.yml"]
 
 permissions:
-  id-token: write
+  id-token: write # OIDC token to assume the AWS role
   contents: read
-  pull-requests: write
+  pull-requests: write # post the plan as a PR comment
+
+# Serialize Terraform against shared state. Never cancel an in-flight apply.
+concurrency:
+  group: terraform
+  cancel-in-progress: false
 
 jobs:
+  # Cheap, credential-free checks. Runs on every push and PR.
   validate:
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: infra
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
       - name: Format check
         run: terraform fmt -check -recursive
-
       - name: Init (no backend)
         run: terraform init -backend=false
-
       - name: Validate
         run: terraform validate
 
-      # A plan needs AWS access + remote state. Enable once those exist by
-      # configuring the OIDC role and uncommenting below.
-      #
-      # - name: Configure AWS credentials (OIDC)
-      #   uses: aws-actions/configure-aws-credentials@v4
-      #   with:
-      #     role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-      #     aws-region: ${{ vars.AWS_REGION }}
-      #
-      # - name: Plan
-      #   run: terraform plan -no-color
+  # Real plan against remote state. Posts the result on PRs.
+  plan:
+    needs: validate
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TF_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Init
+        run: terraform init -input=false
+      - name: Plan
+        id: plan
+        run: terraform plan -no-color -input=false -out=tfplan
+      - name: Comment plan on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          PLAN: ${{ steps.plan.outputs.stdout }}
+        with:
+          script: |
+            const body = `#### Terraform Plan 📖\n\`\`\`\n${process.env.PLAN}\n\`\`\``;
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: body.length > 65000 ? body.slice(0, 65000) + '\n…truncated' : body,
+            });
+
+  # Apply only on merge to main, and only after the "production" environment's
+  # required reviewer approves the run.
+  apply:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [validate, plan]
+    runs-on: ubuntu-latest
+    environment: production
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TF_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Init
+        run: terraform init -input=false
+      - name: Apply
+        run: terraform apply -auto-approve -input=false

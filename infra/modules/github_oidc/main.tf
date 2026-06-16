@@ -73,3 +73,100 @@ resource "aws_iam_role_policy" "deploy" {
   role   = aws_iam_role.deploy.id
   policy = data.aws_iam_policy_document.permissions.json
 }
+
+# --- Terraform CI role (plan on PRs, apply on main) -------------------------
+# Much broader than the deploy role, because `terraform apply` manages the
+# whole stack. Two guards keep that in check: (1) IAM access is scoped to this
+# project's own roles + OIDC provider, so the role can't escalate by editing
+# unrelated principals; (2) the GitHub "production" Environment's required
+# reviewer gates *when* apply runs. Plan (read-only) is allowed from PRs too.
+
+data "aws_caller_identity" "current" {}
+data "aws_region" "current" {}
+
+data "aws_iam_policy_document" "terraform_assume" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    effect  = "Allow"
+
+    principals {
+      type        = "Federated"
+      identifiers = [local.oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    # main branch -> apply; any pull request in the repo -> plan.
+    condition {
+      test     = "StringLike"
+      variable = "token.actions.githubusercontent.com:sub"
+      values = [
+        "repo:${var.github_repo}:ref:refs/heads/${var.github_branch}",
+        "repo:${var.github_repo}:pull_request",
+      ]
+    }
+  }
+}
+
+resource "aws_iam_role" "terraform" {
+  name               = "${var.name_prefix}-terraform"
+  assume_role_policy = data.aws_iam_policy_document.terraform_assume.json
+}
+
+data "aws_iam_policy_document" "terraform" {
+  # Remote state + lock, tightly scoped to the bootstrap resources.
+  statement {
+    sid     = "TerraformState"
+    actions = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject", "s3:ListBucket"]
+    resources = [
+      "arn:aws:s3:::${var.tf_state_bucket}",
+      "arn:aws:s3:::${var.tf_state_bucket}/*",
+    ]
+  }
+
+  statement {
+    sid       = "TerraformLock"
+    actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
+    resources = ["arn:aws:dynamodb:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:table/${var.tf_lock_table}"]
+  }
+
+  # Management plane for the services this stack creates. These services scope
+  # poorly on create operations, so they're granted at the service level.
+  statement {
+    sid       = "ManageStackServices"
+    actions   = ["s3:*", "cloudfront:*", "acm:*", "route53:*"]
+    resources = ["*"]
+  }
+
+  # IAM, scoped to this project's own roles only — the escalation guard.
+  statement {
+    sid = "ManageProjectRoles"
+    actions = [
+      "iam:CreateRole", "iam:DeleteRole", "iam:GetRole", "iam:TagRole", "iam:UntagRole",
+      "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
+      "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:GetRolePolicy",
+    ]
+    resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.name_prefix}-*"]
+  }
+
+  # The account-level GitHub OIDC provider (single shared resource).
+  statement {
+    sid = "ManageOIDCProvider"
+    actions = [
+      "iam:GetOpenIDConnectProvider", "iam:CreateOpenIDConnectProvider",
+      "iam:DeleteOpenIDConnectProvider", "iam:TagOpenIDConnectProvider",
+      "iam:UpdateOpenIDConnectProviderThumbprint", "iam:ListOpenIDConnectProviders",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "terraform" {
+  name   = "${var.name_prefix}-terraform"
+  role   = aws_iam_role.terraform.id
+  policy = data.aws_iam_policy_document.terraform.json
+}

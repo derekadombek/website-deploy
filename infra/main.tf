@@ -64,4 +64,6 @@ module "github_oidc" {
   create_oidc_provider = var.create_oidc_provider
   bucket_arn           = module.static_site.bucket_arn
   distribution_arn     = module.static_site.distribution_arn
+  tf_state_bucket      = var.tf_state_bucket
+  tf_lock_table        = var.tf_lock_table
 }

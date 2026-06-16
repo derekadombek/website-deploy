@@ -22,3 +22,8 @@ output "github_deploy_role_arn" {
   description = "ARN of the IAM role GitHub Actions assumes via OIDC. Add this as the AWS_DEPLOY_ROLE_ARN repo variable."
   value       = module.github_oidc.deploy_role_arn
 }
+
+output "github_terraform_role_arn" {
+  description = "ARN of the IAM role GitHub Actions assumes to run Terraform. Add this as the AWS_TF_ROLE_ARN repo variable."
+  value       = module.github_oidc.terraform_role_arn
+}

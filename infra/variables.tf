@@ -39,3 +39,17 @@ variable "create_oidc_provider" {
   type        = bool
   default     = true
 }
+
+# These must match the S3 backend in versions.tf — Terraform backends can't read
+# variables, so the names are repeated here to scope the CI Terraform role.
+variable "tf_state_bucket" {
+  description = "Name of the S3 bucket holding Terraform remote state."
+  type        = string
+  default     = "website-deploy-tf-state-west"
+}
+
+variable "tf_lock_table" {
+  description = "Name of the DynamoDB table used for Terraform state locking."
+  type        = string
+  default     = "website-deploy-tf-locks"
+}
