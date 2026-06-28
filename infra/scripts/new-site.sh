@@ -31,7 +31,7 @@ NAME="" PROJECT="" DOMAIN="" ZONE="" DEPLOY_REPO=""
 MGMT_REPO="derekadombek/website-deploy" BRANCH="main" REGION="us-west-2"
 STATE_BUCKET="" LOCK_TABLE="" STATE_KEY="" PROFILE=""
 MANAGE_DNS="true" CREATE_ZONE="false" REGISTRAR_R53="false"
-CREATE_OIDC="true" WWW="true"
+CREATE_IAM="false" CREATE_OIDC="true" WWW="true"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -50,6 +50,7 @@ while [ $# -gt 0 ]; do
     --manage-dns) MANAGE_DNS="$2"; shift 2;;
     --create-zone) CREATE_ZONE="$2"; shift 2;;
     --registrar-in-route53) REGISTRAR_R53="$2"; shift 2;;
+    --create-iam) CREATE_IAM="$2"; shift 2;;
     --create-oidc-provider) CREATE_OIDC="$2"; shift 2;;
     --www) WWW="$2"; shift 2;;
     *) echo "unknown option: $1" >&2; exit 1;;
@@ -139,6 +140,10 @@ module "site" {
   create_hosted_zone   = ${CREATE_ZONE}
   registrar_in_route53 = ${REGISTRAR_R53}
   manage_www           = ${WWW}
+
+  # Split model by default: aws-grant-access creates the OIDC provider + roles.
+  create_iam           = ${CREATE_IAM}
+  create_oidc_provider = ${CREATE_OIDC}
 
   deploy_github_repo = "${DEPLOY_REPO}"
   mgmt_github_repo   = "${MGMT_REPO}"

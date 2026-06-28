@@ -179,7 +179,12 @@ resource "aws_route53_record" "www_aaaa" {
 
 # Keyless CI roles: deploy role (app repo, branch-scoped) + Terraform role
 # (mgmt repo, environment-scoped), both scoped to this site's resources.
+#
+# create_iam = false skips this entirely — for the split model, where the client
+# runs aws-grant-access first to create the OIDC provider + roles + state bucket,
+# and this stack only builds the site (over OIDC, create_oidc_provider = false).
 module "github_oidc" {
+  count  = var.create_iam ? 1 : 0
   source = "../github_oidc"
 
   name_prefix          = var.project_name

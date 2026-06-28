@@ -32,6 +32,14 @@ module "site" {
   # Also serve www.<domain> over HTTPS and 301-redirect it to the apex.
   manage_www = false
 
+  # IAM model:
+  #   create_iam = false → SPLIT model (clients): aws-grant-access already made
+  #     the OIDC provider + roles; this stack builds only the site over OIDC.
+  #   create_iam = true  → COMBINED model (your own sites): this stack also makes
+  #     the OIDC provider + roles (set create_oidc_provider below).
+  create_iam           = false
+  create_oidc_provider = true # combined model only; ignored when create_iam = false
+
   # OIDC trust targets — keep these two distinct.
   deploy_github_repo = "owner/app-repo"              # deploy role: the app repo
   mgmt_github_repo   = "derekadombek/website-deploy" # terraform role: this repo
@@ -39,9 +47,6 @@ module "site" {
   # Must equal this env's GitHub Environment name (where its AWS_TF_ROLE_ARN +
   # reviewers live) — convention: same as the env dir name.
   mgmt_environment = "REPLACE"
-
-  # The GitHub OIDC provider is per-account: true in exactly ONE env per account.
-  create_oidc_provider = true
 
   # Must match the backend block in versions.tf (scopes the Terraform role).
   tf_state_bucket = "REPLACE-tf-state"

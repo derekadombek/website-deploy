@@ -29,11 +29,11 @@ output "hosted_zone_name" {
 }
 
 output "deploy_role_arn" {
-  description = "ARN of the deploy role the app repo assumes via OIDC (set as AWS_DEPLOY_ROLE_ARN)."
-  value       = module.github_oidc.deploy_role_arn
+  description = "ARN of the deploy role (combined model). Null under the split model — get it from the access stack instead."
+  value       = var.create_iam ? module.github_oidc[0].deploy_role_arn : null
 }
 
 output "terraform_role_arn" {
-  description = "ARN of the Terraform role the mgmt repo assumes via OIDC (set as the env's AWS_TF_ROLE_ARN_* variable)."
-  value       = module.github_oidc.terraform_role_arn
+  description = "ARN of the Terraform role (combined model). Null under the split model — get it from the access stack instead."
+  value       = var.create_iam ? module.github_oidc[0].terraform_role_arn : null
 }
