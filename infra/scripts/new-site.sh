@@ -59,7 +59,9 @@ done
 
 [ -n "${NAME}" ]        || { echo "--name is required" >&2; exit 1; }
 [ -n "${DEPLOY_REPO}" ] || { echo "--deploy-repo is required" >&2; exit 1; }
-[ -n "${DOMAIN}" ]      || { echo "--domain is required" >&2; exit 1; }
+if [ "${MANAGE_DNS}" = "true" ] && [ -z "${DOMAIN}" ]; then
+  echo "--domain is required when --manage-dns is true" >&2; exit 1
+fi
 
 PROJECT="${PROJECT:-$NAME}"
 ZONE="${ZONE:-$DOMAIN}"
@@ -149,8 +151,6 @@ module "site" {
   mgmt_github_repo   = "${MGMT_REPO}"
   github_branch      = "${BRANCH}"
   mgmt_environment   = "${NAME}"
-
-  create_oidc_provider = ${CREATE_OIDC}
 
   tf_state_bucket = "${STATE_BUCKET}"
   tf_lock_table   = "${LOCK_TABLE}"
