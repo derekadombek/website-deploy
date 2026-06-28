@@ -17,7 +17,17 @@ module "site" {
   # DNS / TLS. Set manage_dns = false to skip cert + DNS and ship S3-only
   # (CloudFront default domain); hosted_zone_name is then unused.
   manage_dns       = true
-  hosted_zone_name = "example.com" # existing Route 53 zone in THIS account
+  hosted_zone_name = "example.com" # the Route 53 zone for this domain
+
+  # create_hosted_zone = false → the zone above must already exist (client
+  # already on Route 53). Set true to CREATE it (client has no Route 53 yet),
+  # then delegate their registrar to the hosted_zone_name_servers output.
+  create_hosted_zone = false
+
+  # registrar_in_route53 = true → the domain is registered in Route 53 in THIS
+  # account, so delegation is set automatically (no manual registrar step).
+  # Leave false for domains registered elsewhere; use scripts/onboard-site.sh.
+  registrar_in_route53 = false
 
   # Also serve www.<domain> over HTTPS and 301-redirect it to the apex.
   manage_www = false
@@ -26,7 +36,9 @@ module "site" {
   deploy_github_repo = "owner/app-repo"              # deploy role: the app repo
   mgmt_github_repo   = "derekadombek/website-deploy" # terraform role: this repo
   github_branch      = "main"
-  mgmt_environment   = "provisioning"
+  # Must equal this env's GitHub Environment name (where its AWS_TF_ROLE_ARN +
+  # reviewers live) — convention: same as the env dir name.
+  mgmt_environment = "REPLACE"
 
   # The GitHub OIDC provider is per-account: true in exactly ONE env per account.
   create_oidc_provider = true
@@ -40,5 +52,6 @@ output "s3_bucket" { value = module.site.s3_bucket }
 output "cloudfront_distribution_id" { value = module.site.cloudfront_distribution_id }
 output "cloudfront_domain_name" { value = module.site.cloudfront_domain_name }
 output "site_url" { value = module.site.site_url }
+output "hosted_zone_name_servers" { value = module.site.hosted_zone_name_servers }
 output "deploy_role_arn" { value = module.site.deploy_role_arn }
 output "terraform_role_arn" { value = module.site.terraform_role_arn }

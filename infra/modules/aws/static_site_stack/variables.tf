@@ -25,6 +25,28 @@ variable "manage_dns" {
   default     = true
 }
 
+variable "create_hosted_zone" {
+  description = <<-EOT
+    When true (and manage_dns), CREATE the Route 53 hosted zone for this domain
+    instead of looking up an existing one — for a client who doesn't have Route 53
+    DNS yet. After apply, delegate the registrar's nameservers to the
+    hosted_zone_name_servers output. When false, the zone must already exist.
+  EOT
+  type        = bool
+  default     = false
+}
+
+variable "registrar_in_route53" {
+  description = <<-EOT
+    When true (with create_hosted_zone), the domain is registered in Route 53 /
+    Amazon Registrar in THIS account, so set its nameservers to the new zone
+    automatically — no manual registrar step. Leave false for domains registered
+    elsewhere (GoDaddy, Namecheap, …); delegate those by hand.
+  EOT
+  type        = bool
+  default     = false
+}
+
 variable "manage_www" {
   description = <<-EOT
     When true (and manage_dns), also serve www.<site_domain>: add it to the cert
