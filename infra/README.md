@@ -31,20 +31,17 @@ accounts. Two envs in the *same* account may share a bucket with different keys.
 
 ## The auth model (no stored keys, ever)
 
-Every account — yours or a client's — is self-contained. After a one-time
-bootstrap it holds:
+Every account holds a GitHub **OIDC provider** + two roles:
 
-- **One GitHub OIDC provider** (account-global). Exactly **one env per account**
-  sets `create_oidc_provider = true`; the rest set it `false` and reuse it.
 - **Deploy role** — trusts the **app repo**, branch-scoped
-  (`repo:<app>:ref:refs/heads/<branch>`); can only `s3 sync` + invalidate. Used
-  on every push. Pair with branch protection on the app repo.
+  (`repo:<app>:ref:refs/heads/<branch>`); can only `s3 sync` + invalidate. Pair
+  with branch protection on the app repo.
 - **Terraform role** — trusts **this management repo** scoped to a GitHub
-  **Environment** (`repo:derekadombek/website-deploy:environment:provisioning`),
-  *not* a branch; manages the whole stack + that account's state. Standing but
-  **inert**: the only token that satisfies its trust is one minted for a job
-  that declared `environment: provisioning`, and that environment has required
-  reviewers — so nothing broad runs without a human approval.
+  **Environment** (`repo:derekadombek/website-deploy:environment:<env>`), *not* a
+  branch; manages the site + that account's state. Standing but **inert**: the
+  only token that satisfies its trust is one minted for a job that declared that
+  environment, and the environment has required reviewers — so nothing runs
+  without a human approval.
 
 ```
 DEPLOY (everyday):  app repo push → OIDC → deploy role (target acct) → sync + invalidate
@@ -54,52 +51,44 @@ MANAGE (on demand): website-deploy workflow → approve env → OIDC → terrafo
 Keep the two trust targets distinct — collapsing them would let deploys and
 provisioning share trust.
 
-## Per-account onboarding (one-time bootstrap → OIDC-only thereafter)
+### Two models: split (clients) vs combined (your own)
 
-The OIDC provider, roles, and state bucket don't exist in a brand-new account,
-so OIDC can't get in yet. Exactly **one** privileged step bootstraps it; after
-that the account is OIDC-only forever.
+- **Split** (`create_iam = false`) — the **client** runs the `aws-grant-access`
+  action once in their repo, with their creds. It creates the state backend +
+  OIDC provider + both roles, and outputs the role ARNs. **No credentials are
+  ever handed to you** — afterwards you manage everything over OIDC. Then the
+  site env (`create_iam = false`) builds only the website.
+- **Combined** (`create_iam = true`) — your own sites (e.g. `portfolio`): one
+  Terraform stack creates the roles *and* the site. The first apply uses your
+  admin creds; everything after is OIDC.
 
-1. **Get one-time privileged access.** For a client: they grant you temporary
-   admin/SSO access (or a technical client self-bootstraps). Configure a local
-   AWS profile for it.
-2. **Create the state backend** (bucket + DynamoDB lock table) in that account —
-   an S3 backend can't bootstrap its own bucket. Use the helper:
+## Onboarding a client (split model)
+
+1. **Client runs `aws-grant-access`** (their repo, their creds) with the project
+   name, region, their app repo, the `mgmt-environment` (= the site env name you'll
+   use), and a state bucket/lock name. It stands up the trust foundation and prints
+   the **deploy + management role ARNs**.
+2. **You create the site env** — run the **New site env** workflow (or
+   `new-site.sh --name <env> --domain … --deploy-repo … --create-iam false`),
+   review the PR, merge. Point its backend at the state bucket from step 1.
+3. **Register CI** — `infra/scripts/register-ci-env.sh <env>` creates the env's
+   GitHub Environment, sets `AWS_TF_ROLE_ARN` (the management role from step 1) +
+   `AWS_REGION`, and adds you as reviewer.
+4. **Provision the site** — over OIDC via `terraform.yml` (approve the env), or
+   locally for the first apply with the DNS-delegation babysitting:
    ```bash
-   AWS_PROFILE=<client-bootstrap> \
-     infra/scripts/bootstrap-backend.sh <state-bucket> <lock-table> <region>
+   CONFIRM_FRESH=1 infra/scripts/onboard-site.sh <env>
    ```
-   Use the same names in the env's `versions.tf` backend block + `tf_state_bucket`
-   / `tf_lock_table`.
-3. **Create the env dir.** Either run the **New site env** workflow in this repo
-   (owner-only `workflow_dispatch` → opens a PR with the generated config), or
-   generate it locally:
-   ```bash
-   infra/scripts/new-site.sh --name <site> --domain <domain> \
-     --deploy-repo <owner/app-repo> --region <region> \
-     --create-oidc-provider true   # true only for the account's first env
-   ```
-   (Or copy `infra/envs/_template` by hand.) Review the generated `main.tf` /
-   `versions.tf` and commit them.
-4. **Bootstrap apply** with the privileged profile:
-   ```bash
-   cd infra/envs/<site>
-   terraform init
-   terraform plan      # review
-   terraform apply
-   ```
-5. **Set the repo Variables** from `terraform output` (see the table below), then
-   **drop the privileged access.** From here on you manage the env from this
-   repo via the Terraform role (OIDC, behind the `provisioning` approval) and
-   the app repo deploys via the deploy role — nothing stored.
+5. **Set the app repo's deploy Variables** — `AWS_DEPLOY_ROLE_ARN` (from step 1) +
+   `S3_BUCKET` / `CLOUDFRONT_DISTRIBUTION_ID` (from the site `terraform output`) +
+   `AWS_REGION`. Push → deploy.
 
-### Adding a client
+For your **own** new site, use `--create-iam true` and apply once with admin creds
+(combined model) — no `aws-grant-access` needed.
 
-Copy `_template`, point `deploy_github_repo` at the **client-owned** app repo
-(they add you as admin → clean offboarding: they revoke your admin and delete the
-two roles and you're fully out), keep `mgmt_github_repo = derekadombek/website-deploy`,
-give the env its own account profile + state backend, and follow the bootstrap
-steps above.
+**Offboarding** is clean: the client deletes the access stack (OIDC provider +
+two roles + state) and revokes your admin on their app repo, and you're fully out
+— nothing was ever stored on your side.
 
 ### DNS: client already on Route 53, or not yet
 

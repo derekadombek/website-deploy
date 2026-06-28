@@ -81,8 +81,18 @@ variable "mgmt_environment" {
   default     = "provisioning"
 }
 
+variable "create_iam" {
+  description = <<-EOT
+    Create the OIDC provider + deploy/Terraform roles here (combined model). Set
+    false for the split model, where aws-grant-access already created them and
+    this stack builds only the site (over OIDC).
+  EOT
+  type        = bool
+  default     = true
+}
+
 variable "create_oidc_provider" {
-  description = "Create the account-level GitHub OIDC provider. Exactly one env per account sets this true."
+  description = "Create the account-level GitHub OIDC provider. Exactly one env per account sets this true. Ignored when create_iam = false."
   type        = bool
   default     = true
 }

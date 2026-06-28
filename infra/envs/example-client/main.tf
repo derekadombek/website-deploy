@@ -26,15 +26,16 @@ module "site" {
   # registered in Route 53, set this true for hands-off delegation.
   registrar_in_route53 = false
 
+  # Split model: the client ran aws-grant-access first, so the OIDC provider +
+  # roles already exist. This stack builds only the site, over OIDC.
+  create_iam = false
+
   # Deploy role trusts the CLIENT's app repo; Terraform role trusts this repo.
   # The client owns the app repo and adds you as admin (clean offboarding).
   deploy_github_repo = "example-client/website"
   mgmt_github_repo   = "derekadombek/website-deploy"
   github_branch      = "main"
   mgmt_environment   = "example-client"
-
-  # New account → it creates its own OIDC provider.
-  create_oidc_provider = true
 
   tf_state_bucket = "example-client-tf-state"
   tf_lock_table   = "example-client-tf-locks"
