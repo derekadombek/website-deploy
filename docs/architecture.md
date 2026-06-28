@@ -4,7 +4,7 @@ A short tour of *why* the stack is built this way.
 
 ## Request flow
 
-A visitor hits `https://bob.derekadombek.com`:
+A visitor hits the site (e.g. `https://derekadombek.com`):
 
 1. **Route 53** resolves the domain to the CloudFront distribution (alias record).
 2. **CloudFront** terminates TLS using the **ACM** certificate and serves cached
@@ -24,15 +24,25 @@ A visitor hits `https://bob.derekadombek.com`:
   stored in the repo to leak or rotate.
 - **Least-privilege deploy role.** The CI role can only write to *this* bucket and
   invalidate *this* distribution — nothing else in the account.
+- **Two trust targets, one human gate.** The deploy role trusts the app repo
+  (branch-scoped) and runs on every push. The broad Terraform role trusts *this*
+  management repo scoped to a GitHub Environment with required reviewers, so it is
+  inert until a human approves — even though it stands permanently.
+- **Per-account isolation.** GitHub OIDC federates directly into each account; there
+  is no central ops account or `assume_role` chain. Each site's state, providers, and
+  trust live in its own `infra/envs/<site>` dir, so accounts never share anything.
 - **Cache strategy.** Fingerprint-free static assets are sent with a long
   `immutable` cache, HTML is sent `no-cache`, and every deploy issues a CloudFront
   invalidation so updates are visible immediately without sacrificing CDN speed.
 
 ## Trade-offs / next steps
 
-- **State is local by default** so the demo runs with zero prerequisites. For team
-  use, switch on the S3 + DynamoDB backend stubbed in `infra/versions.tf`.
-- **`terraform plan` in CI is stubbed but disabled** until the OIDC role + remote
-  state exist; the workflow runs `fmt`/`validate` unconditionally.
+- **Remote state, per account.** Each `infra/envs/<site>` keeps its own S3 +
+  DynamoDB backend in its own account — no shared state bucket. The one-time
+  bootstrap creates it (see [`../infra/README.md`](../infra/README.md)).
+- **CI is fully wired.** `terraform.yml` runs `fmt`/`validate` on every push/PR and
+  plans/applies per env behind the `provisioning` environment's approval.
+- **Phase 2 (deferred):** automate per-client onboarding — wrap the one-time
+  bootstrap and push the four deploy Variables from `terraform output` via `gh`.
 - A natural follow-on demo: add automated backups and uptime monitoring on top of
   this same site (the other planned case studies).

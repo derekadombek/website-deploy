@@ -35,10 +35,12 @@ data "aws_iam_policy_document" "assume" {
       values   = ["sts.amazonaws.com"]
     }
 
+    # Deploy role trusts the APP repo, branch-scoped. Pair with branch
+    # protection on that branch. Deploys are frequent + low-privilege.
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.github_repo}:ref:refs/heads/${var.github_branch}"]
+      values   = ["repo:${var.deploy_github_repo}:ref:refs/heads/${var.github_branch}"]
     }
   }
 }
@@ -74,12 +76,16 @@ resource "aws_iam_role_policy" "deploy" {
   policy = data.aws_iam_policy_document.permissions.json
 }
 
-# --- Terraform CI role (plan on PRs, apply on main) -------------------------
+# --- Terraform / management role --------------------------------------------
 # Much broader than the deploy role, because `terraform apply` manages the
-# whole stack. Two guards keep that in check: (1) IAM access is scoped to this
+# whole stack. Three guards keep that in check: (1) IAM access is scoped to this
 # project's own roles + OIDC provider, so the role can't escalate by editing
-# unrelated principals; (2) the GitHub "production" Environment's required
-# reviewer gates *when* apply runs. Plan (read-only) is allowed from PRs too.
+# unrelated principals; (2) trust is keyed to the MANAGEMENT repo scoped to a
+# GitHub Environment (`environment:<mgmt_environment>`), NOT a branch — so the
+# only token that satisfies this trust is one minted for a job that declared
+# that environment; (3) that environment has required reviewers, so the token
+# (and thus this role) is unusable until a human approves. The broad role
+# stands permanently but is inert without that approval.
 
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
@@ -100,14 +106,10 @@ data "aws_iam_policy_document" "terraform_assume" {
       values   = ["sts.amazonaws.com"]
     }
 
-    # main branch -> apply; any pull request in the repo -> plan.
     condition {
-      test     = "StringLike"
+      test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values = [
-        "repo:${var.github_repo}:ref:refs/heads/${var.github_branch}",
-        "repo:${var.github_repo}:pull_request",
-      ]
+      values   = ["repo:${var.mgmt_github_repo}:environment:${var.mgmt_environment}"]
     }
   }
 }

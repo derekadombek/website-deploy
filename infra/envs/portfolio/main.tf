@@ -1,0 +1,38 @@
+# Portfolio — the apex derekadombek.com, served from the Astro `portfolio` repo.
+# Your account; deploy role trusts the portfolio app repo.
+
+module "site" {
+  source = "../../modules/aws/static_site_stack"
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  project_name = "portfolio"
+  site_domain  = "derekadombek.com"
+
+  manage_dns       = true
+  hosted_zone_name = "derekadombek.com"
+
+  # Serve www over HTTPS and 301 it to the apex.
+  manage_www = true
+
+  deploy_github_repo = "derekadombek/portfolio"
+  mgmt_github_repo   = "derekadombek/website-deploy"
+  github_branch      = "main"
+  mgmt_environment   = "provisioning"
+
+  # First (and only) env in this account, so it owns the account-level OIDC
+  # provider. Any future env in this same account sets create_oidc_provider=false.
+  create_oidc_provider = true
+
+  tf_state_bucket = "website-deploy-tf-state-west"
+  tf_lock_table   = "website-deploy-tf-locks"
+}
+
+output "s3_bucket" { value = module.site.s3_bucket }
+output "cloudfront_distribution_id" { value = module.site.cloudfront_distribution_id }
+output "cloudfront_domain_name" { value = module.site.cloudfront_domain_name }
+output "site_url" { value = module.site.site_url }
+output "deploy_role_arn" { value = module.site.deploy_role_arn }
+output "terraform_role_arn" { value = module.site.terraform_role_arn }

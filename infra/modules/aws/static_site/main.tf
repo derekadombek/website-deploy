@@ -7,8 +7,14 @@
 # globally unique and a deleted name takes time to free, so reusing the domain
 # as the bucket name makes delete/recreate (and region moves) stall. CloudFront
 # uses the bucket's regional endpoint as origin, so the name is internal-only.
+#
+# The account ID suffix guarantees global uniqueness — a bare "<project>-site"
+# collides with other accounts' buckets in the shared S3 namespace.
+data "aws_caller_identity" "current" {}
+
 resource "aws_s3_bucket" "site" {
-  bucket = "${var.name_prefix}-site"
+  bucket        = "${var.name_prefix}-site-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true
 }
 
 resource "aws_s3_bucket_ownership_controls" "site" {
@@ -56,12 +62,19 @@ data "aws_cloudfront_cache_policy" "optimized" {
   name = "Managed-CachingOptimized"
 }
 
+locals {
+  # A custom domain (alias + ACM cert) is attached only when a cert ARN is
+  # supplied. Without one, CloudFront serves its default *.cloudfront.net domain
+  # with the default certificate — the "ship S3 only" recipe (manage_dns=false).
+  custom_domain = var.acm_certificate_arn != ""
+}
+
 resource "aws_cloudfront_distribution" "site" {
   enabled             = true
   is_ipv6_enabled     = true
   comment             = var.site_domain
   default_root_object = "index.html"
-  aliases             = [var.site_domain]
+  aliases             = local.custom_domain ? concat([var.site_domain], var.extra_aliases) : []
   price_class         = var.price_class
 
   origin {
@@ -77,6 +90,14 @@ resource "aws_cloudfront_distribution" "site" {
     cached_methods         = ["GET", "HEAD"]
     cache_policy_id        = data.aws_cloudfront_cache_policy.optimized.id
     compress               = true
+
+    dynamic "function_association" {
+      for_each = var.viewer_request_function_arn != "" ? [1] : []
+      content {
+        event_type   = "viewer-request"
+        function_arn = var.viewer_request_function_arn
+      }
+    }
   }
 
   custom_error_response {
@@ -93,9 +114,10 @@ resource "aws_cloudfront_distribution" "site" {
   }
 
   viewer_certificate {
-    acm_certificate_arn      = var.acm_certificate_arn
-    ssl_support_method       = "sni-only"
-    minimum_protocol_version = "TLSv1.2_2021"
+    cloudfront_default_certificate = local.custom_domain ? null : true
+    acm_certificate_arn            = local.custom_domain ? var.acm_certificate_arn : null
+    ssl_support_method             = local.custom_domain ? "sni-only" : null
+    minimum_protocol_version       = local.custom_domain ? "TLSv1.2_2021" : null
   }
 }
 
