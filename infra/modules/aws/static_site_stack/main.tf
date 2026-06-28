@@ -14,13 +14,43 @@ locals {
   # www handling only makes sense when we own the domain + cert.
   www_enabled = var.manage_dns && var.manage_www
   www_domain  = "www.${var.site_domain}"
+
+  # The hosted zone is either created here (client has no Route 53 zone yet) or
+  # looked up (client already manages the domain in Route 53).
+  zone_id = var.manage_dns ? (
+    var.create_hosted_zone ? aws_route53_zone.primary[0].zone_id : data.aws_route53_zone.primary[0].zone_id
+  ) : null
 }
 
-# DNS zone is looked up only when we manage DNS.
+# Create the zone for a client who doesn't have one yet. After apply, the client
+# must point their registrar's nameservers at this zone's name_servers output;
+# until that delegation lands, public DNS (and ACM DNS validation) won't resolve.
+resource "aws_route53_zone" "primary" {
+  count = var.manage_dns && var.create_hosted_zone ? 1 : 0
+  name  = var.hosted_zone_name
+}
+
+# Look up an existing zone when the client already manages the domain in Route 53.
 data "aws_route53_zone" "primary" {
-  count        = var.manage_dns ? 1 : 0
+  count        = var.manage_dns && !var.create_hosted_zone ? 1 : 0
   name         = var.hosted_zone_name
   private_zone = false
+}
+
+# Auto-delegation: if the domain is registered in Route 53 in this account, point
+# its nameservers at the new zone so no one has to touch a registrar by hand.
+# (Route 53 Domains is a us-east-1 API, hence the aliased provider.)
+resource "aws_route53domains_registered_domain" "this" {
+  count       = var.manage_dns && var.create_hosted_zone && var.registrar_in_route53 ? 1 : 0
+  provider    = aws.us_east_1
+  domain_name = var.hosted_zone_name
+
+  dynamic "name_server" {
+    for_each = aws_route53_zone.primary[0].name_servers
+    content {
+      name = name_server.value
+    }
+  }
 }
 
 # TLS certificate (us-east-1, as CloudFront requires). Skipped when manage_dns
@@ -34,17 +64,20 @@ module "certificate" {
 
   domain_name               = var.site_domain
   subject_alternative_names = local.www_enabled ? [local.www_domain] : []
-  hosted_zone_id            = data.aws_route53_zone.primary[0].zone_id
+  hosted_zone_id            = local.zone_id
 }
 
-# Redirect www→apex over HTTPS at the edge. Apex requests pass through
-# unchanged; only www hosts get a 301. Generic (derives the apex by stripping
-# the leading "www."), so it needs no per-site config.
-resource "aws_cloudfront_function" "www_redirect" {
-  count   = local.www_enabled ? 1 : 0
-  name    = "${var.project_name}-www-redirect"
+# Edge router (viewer-request). Does two generic jobs, so it's attached to every
+# site:
+#   1. www→apex 301 (no-op unless www is actually routed to this distribution).
+#   2. Clean-URL rewrite: directory-style requests ("/services/", "/about") map
+#      to the underlying "…/index.html" object. Required because the private S3
+#      origin (OAC) does no directory-index resolution — without it every nested
+#      path 403s and falls back to the home page.
+resource "aws_cloudfront_function" "router" {
+  name    = "${var.project_name}-router"
   runtime = "cloudfront-js-2.0"
-  comment = "301 redirect www.<domain> to the apex"
+  comment = "www→apex redirect + clean-URL index rewrite"
   publish = true
   code    = <<-EOT
     function handler(event) {
@@ -56,6 +89,12 @@ resource "aws_cloudfront_function" "www_redirect" {
           statusDescription: 'Moved Permanently',
           headers: { location: { value: 'https://' + host.substring(4) + request.uri } }
         };
+      }
+      var uri = request.uri;
+      if (uri.charAt(uri.length - 1) === '/') {
+        request.uri = uri + 'index.html';
+      } else if (uri.substring(uri.lastIndexOf('/') + 1).indexOf('.') === -1) {
+        request.uri = uri + '/index.html';
       }
       return request;
     }
@@ -71,13 +110,13 @@ module "static_site" {
   site_domain                 = var.site_domain
   acm_certificate_arn         = var.manage_dns ? module.certificate[0].certificate_arn : ""
   extra_aliases               = local.www_enabled ? [local.www_domain] : []
-  viewer_request_function_arn = local.www_enabled ? aws_cloudfront_function.www_redirect[0].arn : ""
+  viewer_request_function_arn = aws_cloudfront_function.router.arn
 }
 
 # Point the domain at CloudFront (only when managing DNS).
 resource "aws_route53_record" "site_a" {
   count   = var.manage_dns ? 1 : 0
-  zone_id = data.aws_route53_zone.primary[0].zone_id
+  zone_id = local.zone_id
   name    = var.site_domain
   type    = "A"
 
@@ -93,7 +132,7 @@ resource "aws_route53_record" "site_a" {
 
 resource "aws_route53_record" "site_aaaa" {
   count   = var.manage_dns ? 1 : 0
-  zone_id = data.aws_route53_zone.primary[0].zone_id
+  zone_id = local.zone_id
   name    = var.site_domain
   type    = "AAAA"
 
@@ -109,7 +148,7 @@ resource "aws_route53_record" "site_aaaa" {
 # Point www at the same distribution (the redirect function 301s it to apex).
 resource "aws_route53_record" "www_a" {
   count   = local.www_enabled ? 1 : 0
-  zone_id = data.aws_route53_zone.primary[0].zone_id
+  zone_id = local.zone_id
   name    = local.www_domain
   type    = "A"
 
@@ -125,7 +164,7 @@ resource "aws_route53_record" "www_a" {
 
 resource "aws_route53_record" "www_aaaa" {
   count   = local.www_enabled ? 1 : 0
-  zone_id = data.aws_route53_zone.primary[0].zone_id
+  zone_id = local.zone_id
   name    = local.www_domain
   type    = "AAAA"
 
