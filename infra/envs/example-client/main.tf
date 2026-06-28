@@ -31,7 +31,7 @@ module "site" {
   deploy_github_repo = "example-client/website"
   mgmt_github_repo   = "derekadombek/website-deploy"
   github_branch      = "main"
-  mgmt_environment   = "provisioning"
+  mgmt_environment   = "example-client"
 
   # New account → it creates its own OIDC provider.
   create_oidc_provider = true

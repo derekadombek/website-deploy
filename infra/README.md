@@ -153,9 +153,27 @@ if a client needs **different reviewers**.
 | `S3_BUCKET` | `s3_bucket` |
 | `CLOUDFRONT_DISTRIBUTION_ID` | `cloudfront_distribution_id` |
 
-**This repo** (website-deploy) — consumed by `terraform.yml`: a per-env
-`AWS_TF_ROLE_ARN_<ENV>` (e.g. `AWS_TF_ROLE_ARN_PERSONAL_PORTFOLIO`) set from each env's
-`terraform_role_arn`.
+**This repo** (website-deploy) — CI management is per **GitHub Environment**, one per
+CI-managed env (named the same as the env dir). Each holds:
+
+- **scoped variables** `AWS_TF_ROLE_ARN` (that env's `terraform_role_arn`) + `AWS_REGION`,
+- its own **required reviewers** (the approval that mints the env-scoped OIDC token).
+
+The env's Terraform config sets `mgmt_environment = "<name>"` so its role trusts
+`environment:<name>`. **Convention: env dir name = GitHub Environment name = `mgmt_environment`.**
+
+### Which envs CI runs
+
+`terraform.yml` never plans/applies every env at once:
+
+- **push / PR** → only the envs whose files changed (a `infra/modules/**` change counts
+  as all, since modules are shared).
+- **workflow_dispatch** → pick one env, or `all`.
+
+Every env is **auto-validated**. An env becomes CI **plan/apply**-managed simply by having
+a GitHub Environment with its name — that's the opt-in. So onboarding a client to CI is:
+create the `<name>` environment, add `AWS_TF_ROLE_ARN` + `AWS_REGION` + reviewers (the
+`register-ci-env.sh` script does this from `terraform output`).
 
 ## Verify
 

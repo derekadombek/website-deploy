@@ -36,7 +36,9 @@ module "site" {
   deploy_github_repo = "owner/app-repo"              # deploy role: the app repo
   mgmt_github_repo   = "derekadombek/website-deploy" # terraform role: this repo
   github_branch      = "main"
-  mgmt_environment   = "provisioning"
+  # Must equal this env's GitHub Environment name (where its AWS_TF_ROLE_ARN +
+  # reviewers live) — convention: same as the env dir name.
+  mgmt_environment = "REPLACE"
 
   # The GitHub OIDC provider is per-account: true in exactly ONE env per account.
   create_oidc_provider = true

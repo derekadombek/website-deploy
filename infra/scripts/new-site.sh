@@ -143,7 +143,7 @@ module "site" {
   deploy_github_repo = "${DEPLOY_REPO}"
   mgmt_github_repo   = "${MGMT_REPO}"
   github_branch      = "${BRANCH}"
-  mgmt_environment   = "provisioning"
+  mgmt_environment   = "${NAME}"
 
   create_oidc_provider = ${CREATE_OIDC}
 

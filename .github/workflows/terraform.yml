@@ -1,37 +1,122 @@
 name: Terraform
 
-# Provision/manage every site in infra/envs/*. Cheap checks run on every push
-# and PR. Plan + apply assume each env's Terraform role via OIDC — and because
-# that role's trust is scoped to the `provisioning` GitHub Environment, the
-# token that satisfies it is only minted after this workflow's required reviewer
-# approves. The broad role is therefore unusable without a human in the loop.
+# Provision/manage sites in infra/envs/*. A setup job decides WHICH envs run:
+#   - workflow_dispatch → the env you pick (or "all")
+#   - push / PR         → only the envs whose files changed (a module change
+#                         counts as all, since modules are shared)
+# so you never run every client's plan/apply at once.
+#
+# An env is CI-managed iff a GitHub Environment with its name exists. That
+# environment holds the client's AWS_TF_ROLE_ARN + AWS_REGION (scoped variables)
+# and its own required reviewers — the approval is what mints the env-scoped
+# OIDC token the env's Terraform role trusts. Validate-only envs (no environment)
+# are still checked, just never planned/applied.
 on:
   push:
     branches: [main]
     paths: ["infra/**", ".github/workflows/terraform.yml"]
   pull_request:
     paths: ["infra/**", ".github/workflows/terraform.yml"]
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      env:
+        description: 'Env to run — an infra/envs/<name>, or "all".'
+        required: false
+        default: all
 
 permissions:
   id-token: write # OIDC token to assume the AWS role
   contents: read
   pull-requests: write # post the plan as a PR comment
 
-# Serialize Terraform against shared state. Never cancel an in-flight apply.
 concurrency:
   group: terraform-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  # Credential-free checks across every env. Runs on every push and PR.
+  # Decide which envs are in scope and emit the matrices.
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      validate_matrix: ${{ steps.scope.outputs.validate_matrix }}
+      apply_matrix: ${{ steps.scope.outputs.apply_matrix }}
+      has_validate: ${{ steps.scope.outputs.has_validate }}
+      has_apply: ${{ steps.scope.outputs.has_apply }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need history to diff changed envs
+
+      - name: Compute target envs
+        id: scope
+        env:
+          EVENT: ${{ github.event_name }}
+          SELECTION: ${{ github.event.inputs.env }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # All envs that exist (for validate), minus the template.
+          all_envs=$(ls -1 infra/envs | grep -vx '_template' || true)
+
+          # CI-managed envs = those with a matching GitHub Environment (which
+          # holds their AWS_TF_ROLE_ARN/AWS_REGION + reviewers). That's the
+          # opt-in: create the environment to put a client under CI management.
+          ci_envs=$(gh api "repos/${GITHUB_REPOSITORY}/environments" --paginate --jq '.environments[].name' 2>/dev/null || true)
+
+          # Determine the in-scope env names.
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            if [ -z "$SELECTION" ] || [ "$SELECTION" = "all" ]; then
+              scope="$all_envs"
+            elif echo "$all_envs" | grep -qx "$SELECTION"; then
+              scope="$SELECTION"
+            else
+              echo "::error::No such env '$SELECTION'. Options: all, $(echo $all_envs | tr '\n' ' ')"
+              exit 1
+            fi
+          else
+            if [ "$EVENT" = "pull_request" ]; then base="$BASE_SHA"; else base="$BEFORE_SHA"; fi
+            if ! git rev-parse --verify "${base:-}" >/dev/null 2>&1; then base="$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)"; fi
+            changed=$(git diff --name-only "$base" HEAD)
+            # A shared change (modules or this workflow) affects every env.
+            if echo "$changed" | grep -qE '^(infra/modules/|\.github/workflows/terraform\.yml)'; then
+              scope="$all_envs"
+            else
+              scope=$(echo "$changed" | sed -n 's#^infra/envs/\([^/]*\)/.*#\1#p' | sort -u)
+            fi
+          fi
+
+          j() { printf '%s\n' $1 | jq -R . | jq -cs 'map(select(length>0))'; }
+          all_json=$(j "$all_envs"); scope_json=$(j "$scope"); ci_json=$(j "$ci_envs")
+
+          # validate: every in-scope env. apply: in-scope envs that are CI-managed.
+          validate=$(jq -cn --argjson a "$all_json" --argjson s "$scope_json" \
+            '[ $a[] | select(. as $e | $s|index($e)) | {env: .} ]')
+          apply=$(jq -cn --argjson a "$all_json" --argjson s "$scope_json" --argjson c "$ci_json" \
+            '[ $a[] | select(. as $e | ($s|index($e)) and ($c|index($e))) | {env: .} ]')
+
+          {
+            echo "validate_matrix={\"include\":$validate}"
+            echo "apply_matrix={\"include\":$apply}"
+            echo "has_validate=$([ "$(echo "$validate" | jq 'length')" -gt 0 ] && echo true || echo false)"
+            echo "has_apply=$([ "$(echo "$apply" | jq 'length')" -gt 0 ] && echo true || echo false)"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "scope: $(echo $scope | tr '\n' ' ')"
+          echo "ci-managed: $(echo $ci_envs | tr '\n' ' ')"
+          echo "validate: $validate"
+          echo "apply: $apply"
+
+  # Credential-free checks for the in-scope envs.
   validate:
+    needs: setup
+    if: needs.setup.outputs.has_validate == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix:
-        # `_template` is excluded — it carries REPLACE placeholders by design.
-        env: [portfolio, example-client]
+      matrix: ${{ fromJSON(needs.setup.outputs.validate_matrix) }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -44,23 +129,17 @@ jobs:
         working-directory: infra/envs/${{ matrix.env }}
         run: terraform validate
 
-  # Plan + apply for the envs that have a real backend + Terraform role.
-  # example-client is validate-only (foreign account placeholder), so it is not
-  # listed here. Both jobs declare `environment: provisioning`: that is what
-  # makes the OIDC subject `…:environment:provisioning`, which is the only
-  # subject each Terraform role trusts — approval is enforced by the gate AND by
-  # the trust policy.
+  # Plan for the in-scope CI-managed envs. Each runs in its own GitHub
+  # Environment, whose approval mints the env-scoped OIDC token, and whose scoped
+  # variables supply the role + region.
   plan:
-    needs: validate
+    needs: [setup, validate]
+    if: needs.setup.outputs.has_apply == 'true'
     runs-on: ubuntu-latest
-    environment: provisioning
+    environment: ${{ matrix.env }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - env: portfolio
-            role_var: AWS_TF_ROLE_ARN_PERSONAL_PORTFOLIO
-            region: us-west-2
+      matrix: ${{ fromJSON(needs.setup.outputs.apply_matrix) }}
     defaults:
       run:
         working-directory: infra/envs/${{ matrix.env }}
@@ -70,8 +149,8 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars[matrix.role_var] }}
-          aws-region: ${{ matrix.region }}
+          role-to-assume: ${{ vars.AWS_TF_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
       - name: Init
         run: terraform init -input=false
       - name: Plan
@@ -93,20 +172,16 @@ jobs:
               body: body.length > 65000 ? body.slice(0, 65000) + '\n…truncated' : body,
             });
 
-  # Apply only on merge to main (or manual dispatch), after the same approval.
+  # Apply on merge to main or manual dispatch, after the same approval.
   apply:
-    if: github.event_name != 'pull_request'
-    needs: [validate, plan]
+    needs: [setup, validate, plan]
+    if: needs.setup.outputs.has_apply == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    environment: provisioning
+    environment: ${{ matrix.env }}
     strategy:
       fail-fast: false
       max-parallel: 1
-      matrix:
-        include:
-          - env: portfolio
-            role_var: AWS_TF_ROLE_ARN_PERSONAL_PORTFOLIO
-            region: us-west-2
+      matrix: ${{ fromJSON(needs.setup.outputs.apply_matrix) }}
     defaults:
       run:
         working-directory: infra/envs/${{ matrix.env }}
@@ -116,8 +191,8 @@ jobs:
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars[matrix.role_var] }}
-          aws-region: ${{ matrix.region }}
+          role-to-assume: ${{ vars.AWS_TF_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
       - name: Init
         run: terraform init -input=false
       - name: Apply

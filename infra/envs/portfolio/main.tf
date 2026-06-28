@@ -20,7 +20,7 @@ module "site" {
   deploy_github_repo = "derekadombek/portfolio"
   mgmt_github_repo   = "derekadombek/website-deploy"
   github_branch      = "main"
-  mgmt_environment   = "provisioning"
+  mgmt_environment   = "portfolio"
 
   # First (and only) env in this account, so it owns the account-level OIDC
   # provider. Any future env in this same account sets create_oidc_provider=false.
