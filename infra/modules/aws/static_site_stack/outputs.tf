@@ -18,6 +18,16 @@ output "site_url" {
   value       = var.manage_dns ? "https://${var.site_domain}" : "https://${module.static_site.distribution_domain_name}"
 }
 
+output "hosted_zone_name_servers" {
+  description = "Nameservers of the created hosted zone — hand these to the client's registrar to delegate DNS. Empty unless create_hosted_zone = true."
+  value       = var.manage_dns && var.create_hosted_zone ? aws_route53_zone.primary[0].name_servers : []
+}
+
+output "hosted_zone_name" {
+  description = "The domain whose Route 53 zone this env manages (for delegation tooling). Empty when manage_dns = false."
+  value       = var.manage_dns ? var.hosted_zone_name : ""
+}
+
 output "deploy_role_arn" {
   description = "ARN of the deploy role the app repo assumes via OIDC (set as AWS_DEPLOY_ROLE_ARN)."
   value       = module.github_oidc.deploy_role_arn

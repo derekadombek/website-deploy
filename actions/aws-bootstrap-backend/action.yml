@@ -1,0 +1,43 @@
+name: AWS bootstrap state backend
+description: >-
+  Create the Terraform S3 state bucket + DynamoDB lock table in the target AWS
+  account. Run ONCE per new account, before any terraform init — an S3 backend
+  can't bootstrap the bucket it stores state in. This is a privileged, pre-OIDC
+  step, so the caller must supply privileged credentials (see below).
+
+# Auth: this runs before the account has any OIDC roles, so you provide creds
+# one of two ways:
+#   - role-arn set  → the action assumes it via OIDC (needs permissions:
+#     id-token: write). Use this only if an admin/bootstrap role already exists.
+#   - role-arn empty → configure credentials yourself in a prior step (e.g.
+#     aws-actions/configure-aws-credentials with short-lived SSO/temp creds).
+inputs:
+  aws-region:
+    description: Region for the state bucket + lock table.
+    required: true
+  state-bucket:
+    description: Name of the S3 state bucket to create.
+    required: true
+  lock-table:
+    description: Name of the DynamoDB lock table to create.
+    required: true
+  role-arn:
+    description: Optional role to assume via OIDC. Leave empty to use credentials configured in a prior step.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Configure AWS credentials (OIDC)
+      if: inputs.role-arn != ''
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.role-arn }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Create state backend
+      shell: bash
+      run: |
+        "${{ github.action_path }}/../../infra/scripts/bootstrap-backend.sh" \
+          "${{ inputs.state-bucket }}" "${{ inputs.lock-table }}" "${{ inputs.aws-region }}"

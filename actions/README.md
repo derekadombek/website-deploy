@@ -91,6 +91,83 @@ jobs:
 The four `vars.*` come from `terraform output` after provisioning the site (see
 [`../infra/README.md`](../infra/README.md)).
 
+---
+
+> The two actions below are **onboarding/management** actions, not the everyday
+> deploy. They run privileged or Terraform-scoped operations — read the auth
+> notes. Both wrap the scripts in [`../infra/scripts/`](../infra/scripts/).
+
+## `aws-bootstrap-backend`
+
+Create the Terraform state backend (S3 bucket + DynamoDB lock table) in a new
+account — the one-time step that must happen before `terraform init`, since an S3
+backend can't create its own bucket.
+
+| Input | Required | Default | Purpose |
+|---|---|---|---|
+| `aws-region` | yes | — | Region for the bucket + table. |
+| `state-bucket` | yes | — | Bucket name to create. |
+| `lock-table` | yes | — | DynamoDB lock table to create. |
+| `role-arn` | no | `""` | Role to assume via OIDC; empty = use creds from a prior step. |
+
+**Auth:** this runs *before* the account has OIDC roles, so supply privileged
+credentials — either a prior `configure-aws-credentials` step (short-lived
+SSO/temp creds) or, if an admin role already exists, `role-arn` (needs
+`permissions: id-token: write`).
+
+```yaml
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # configure privileged creds here (temp SSO creds, or an admin role)…
+      - uses: derekadombek/website-deploy/actions/aws-bootstrap-backend@v1
+        with:
+          aws-region: us-west-2
+          state-bucket: acme-tf-state
+          lock-table: acme-tf-locks
+```
+
+## `aws-provision-site`
+
+Provision/update one site's full stack by running Terraform against its env dir
+in this repo, babysitting Route 53 delegation so the run never hangs at ACM
+validation. The env must already exist under `infra/envs/`.
+
+| Input | Required | Default | Purpose |
+|---|---|---|---|
+| `env` | yes | — | Env dir name under `infra/envs/`. |
+| `aws-region` | yes | — | Region for the env. |
+| `role-arn` | no | `""` | Env's Terraform role (OIDC) for ongoing management; empty = privileged creds for first bootstrap. |
+| `terraform-version` | no | `1.5.7` | Terraform to install. |
+| `confirm-fresh` | no | `false` | Set `true` **only** for the first-ever provision of this env (see guardrail below). |
+
+**Auth:** first bootstrap → privileged creds in a prior step; ongoing management
+→ `role-arn` = the env's `terraform_role_arn`, gated behind an approval
+environment (`permissions: id-token: write`).
+
+**Re-run guardrail:** the action **refuses to apply against empty Terraform
+state** unless `confirm-fresh: true`. Empty state on a re-run means the state was
+lost or the backend is mis-pointed, and applying would recreate resources and
+silently create a **duplicate Route 53 zone**. So: pass `confirm-fresh: true` for
+the very first provision; never again. Normal re-runs (intact state) are a safe
+no-op and need nothing.
+
+```yaml
+jobs:
+  provision:
+    runs-on: ubuntu-latest
+    environment: provisioning   # approval gate for the management case
+    steps:
+      - uses: actions/checkout@v4
+      - uses: derekadombek/website-deploy/actions/aws-provision-site@v1
+        with:
+          env: example-client
+          aws-region: us-east-1
+          role-arn: ${{ vars.AWS_TF_ROLE_ARN_EXAMPLE_CLIENT }}
+```
+
 ## Adding an action
 
 1. Create `actions/<provider>-<capability>/action.yml` with `runs.using: composite`.
