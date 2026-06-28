@@ -30,6 +30,13 @@ module "site" {
   tf_lock_table   = "website-deploy-tf-locks"
 }
 
+# github_oidc became count-gated (create_iam) in the module; re-home the existing
+# instance so the index shift is a no-op for this combined-model env.
+moved {
+  from = module.site.module.github_oidc
+  to   = module.site.module.github_oidc[0]
+}
+
 output "s3_bucket" { value = module.site.s3_bucket }
 output "cloudfront_distribution_id" { value = module.site.cloudfront_distribution_id }
 output "cloudfront_domain_name" { value = module.site.cloudfront_domain_name }

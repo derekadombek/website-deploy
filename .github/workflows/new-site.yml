@@ -1,4 +1,4 @@
-name: New site env
+name: New TF env
 
 # Owner-only: generate a new site's env dir (infra/envs/<name>) from inputs and
 # open a PR. Review + merge the PR (terraform plan runs on it), then bootstrap

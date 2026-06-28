@@ -1,0 +1,77 @@
+name: AWS grant access
+description: >-
+  Stand up the trust foundation in this AWS account so derekadombek/website-deploy
+  can manage it over OIDC — creates the Terraform state backend + GitHub OIDC
+  provider + deploy role + management role. A CLIENT runs this once in their own
+  repo with their own privileged credentials; nothing is handed over, and from
+  then on management is keyless via OIDC.
+
+# Auth (first access — OIDC doesn't exist yet, that's what this creates):
+#   - role-arn set  → assumed via OIDC (only if the account already has an admin
+#     role you trust; needs permissions: id-token: write).
+#   - role-arn empty → configure privileged credentials in a prior step
+#     (short-lived SSO/temp creds).
+inputs:
+  aws-region:
+    description: AWS region for the state + site buckets.
+    required: true
+  project-name:
+    description: Project name — must match the site env's project_name.
+    required: true
+  deploy-github-repo:
+    description: App repo that deploys the site (owner/name).
+    required: true
+  mgmt-environment:
+    description: GitHub Environment (in the management repo) the Terraform role trusts — same as the site env name.
+    required: true
+  state-bucket:
+    description: S3 state bucket to create.
+    required: true
+  lock-table:
+    description: DynamoDB lock table to create.
+    required: true
+  mgmt-github-repo:
+    description: Management repo allowed to run Terraform.
+    required: false
+    default: derekadombek/website-deploy
+  github-branch:
+    description: Branch of the app repo allowed to deploy.
+    required: false
+    default: main
+  role-arn:
+    description: Optional admin role to assume via OIDC. Empty = use creds from a prior step.
+    required: false
+    default: ""
+  terraform-version:
+    description: Terraform version to install.
+    required: false
+    default: "1.5.7"
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: ${{ inputs.terraform-version }}
+        terraform_wrapper: false
+
+    - name: Configure AWS credentials (OIDC)
+      if: inputs.role-arn != ''
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        role-to-assume: ${{ inputs.role-arn }}
+        aws-region: ${{ inputs.aws-region }}
+
+    - name: Grant access
+      shell: bash
+      run: |
+        "${{ github.action_path }}/../../infra/scripts/grant-access.sh" \
+          --project "${{ inputs.project-name }}" \
+          --region "${{ inputs.aws-region }}" \
+          --deploy-repo "${{ inputs.deploy-github-repo }}" \
+          --mgmt-environment "${{ inputs.mgmt-environment }}" \
+          --state-bucket "${{ inputs.state-bucket }}" \
+          --lock-table "${{ inputs.lock-table }}" \
+          --mgmt-repo "${{ inputs.mgmt-github-repo }}" \
+          --branch "${{ inputs.github-branch }}"
