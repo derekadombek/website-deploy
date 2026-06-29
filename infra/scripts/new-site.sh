@@ -22,7 +22,6 @@
 #   --manage-dns <bool>          [true]
 #   --create-zone <bool>         create_hosted_zone     [false]
 #   --registrar-in-route53 <bool>                       [false]
-#   --create-oidc-provider <bool>                       [true]
 #   --www <bool>                 manage_www             [true]
 
 set -euo pipefail
@@ -30,8 +29,7 @@ set -euo pipefail
 NAME="" PROJECT="" DOMAIN="" ZONE="" DEPLOY_REPO=""
 MGMT_REPO="derekadombek/website-deploy" BRANCH="main" REGION="us-west-2"
 STATE_BUCKET="" LOCK_TABLE="" STATE_KEY="" PROFILE=""
-MANAGE_DNS="true" CREATE_ZONE="false" REGISTRAR_R53="false"
-CREATE_IAM="false" CREATE_OIDC="true" WWW="true"
+MANAGE_DNS="true" CREATE_ZONE="false" REGISTRAR_R53="false" WWW="true"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -50,8 +48,6 @@ while [ $# -gt 0 ]; do
     --manage-dns) MANAGE_DNS="$2"; shift 2;;
     --create-zone) CREATE_ZONE="$2"; shift 2;;
     --registrar-in-route53) REGISTRAR_R53="$2"; shift 2;;
-    --create-iam) CREATE_IAM="$2"; shift 2;;
-    --create-oidc-provider) CREATE_OIDC="$2"; shift 2;;
     --www) WWW="$2"; shift 2;;
     *) echo "unknown option: $1" >&2; exit 1;;
   esac
@@ -143,10 +139,8 @@ module "site" {
   registrar_in_route53 = ${REGISTRAR_R53}
   manage_www           = ${WWW}
 
-  # Split model by default: aws-grant-access creates the OIDC provider + roles.
-  create_iam           = ${CREATE_IAM}
-  create_oidc_provider = ${CREATE_OIDC}
-
+  # OIDC provider + deploy/Terraform roles are created once per account by the
+  # aws-grant-access action (see infra/access); this stack builds only the site.
   deploy_github_repo = "${DEPLOY_REPO}"
   mgmt_github_repo   = "${MGMT_REPO}"
   github_branch      = "${BRANCH}"
@@ -161,8 +155,6 @@ output "cloudfront_distribution_id" { value = module.site.cloudfront_distributio
 output "cloudfront_domain_name" { value = module.site.cloudfront_domain_name }
 output "site_url" { value = module.site.site_url }
 output "hosted_zone_name_servers" { value = module.site.hosted_zone_name_servers }
-output "deploy_role_arn" { value = module.site.deploy_role_arn }
-output "terraform_role_arn" { value = module.site.terraform_role_arn }
 EOF
 
 terraform fmt "${ENV_DIR}" >/dev/null 2>&1 || true

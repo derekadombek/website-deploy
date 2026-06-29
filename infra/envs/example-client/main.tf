@@ -26,9 +26,8 @@ module "site" {
   # registered in Route 53, set this true for hands-off delegation.
   registrar_in_route53 = false
 
-  # Split model: the client ran aws-grant-access first, so the OIDC provider +
-  # roles already exist. This stack builds only the site, over OIDC.
-  create_iam = false
+  # The client ran aws-grant-access first, so the OIDC provider + roles already
+  # exist (see infra/access). This stack builds only the site, over OIDC.
 
   # Deploy role trusts the CLIENT's app repo; Terraform role trusts this repo.
   # The client owns the app repo and adds you as admin (clean offboarding).
@@ -46,5 +45,3 @@ output "cloudfront_distribution_id" { value = module.site.cloudfront_distributio
 output "cloudfront_domain_name" { value = module.site.cloudfront_domain_name }
 output "site_url" { value = module.site.site_url }
 output "hosted_zone_name_servers" { value = module.site.hosted_zone_name_servers }
-output "deploy_role_arn" { value = module.site.deploy_role_arn }
-output "terraform_role_arn" { value = module.site.terraform_role_arn }

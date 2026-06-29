@@ -32,13 +32,8 @@ module "site" {
   # Also serve www.<domain> over HTTPS and 301-redirect it to the apex.
   manage_www = false
 
-  # IAM model:
-  #   create_iam = false → SPLIT model (clients): aws-grant-access already made
-  #     the OIDC provider + roles; this stack builds only the site over OIDC.
-  #   create_iam = true  → COMBINED model (your own sites): this stack also makes
-  #     the OIDC provider + roles (set create_oidc_provider below).
-  create_iam           = false
-  create_oidc_provider = true # combined model only; ignored when create_iam = false
+  # OIDC provider + deploy/Terraform roles are created once per account by the
+  # aws-grant-access action (see infra/access); this stack builds only the site.
 
   # OIDC trust targets — keep these two distinct.
   deploy_github_repo = "owner/app-repo"              # deploy role: the app repo
@@ -58,5 +53,3 @@ output "cloudfront_distribution_id" { value = module.site.cloudfront_distributio
 output "cloudfront_domain_name" { value = module.site.cloudfront_domain_name }
 output "site_url" { value = module.site.site_url }
 output "hosted_zone_name_servers" { value = module.site.hosted_zone_name_servers }
-output "deploy_role_arn" { value = module.site.deploy_role_arn }
-output "terraform_role_arn" { value = module.site.terraform_role_arn }
