@@ -22,24 +22,14 @@ module "site" {
   github_branch      = "main"
   mgmt_environment   = "portfolio"
 
-  # First (and only) env in this account, so it owns the account-level OIDC
-  # provider. Any future env in this same account sets create_oidc_provider=false.
-  create_oidc_provider = true
+  # OIDC provider + roles live in the separate access config (infra/access),
+  # stood up by aws-grant-access. This env builds only the site.
 
   tf_state_bucket = "website-deploy-tf-state-west"
   tf_lock_table   = "website-deploy-tf-locks"
-}
-
-# github_oidc became count-gated (create_iam) in the module; re-home the existing
-# instance so the index shift is a no-op for this combined-model env.
-moved {
-  from = module.site.module.github_oidc
-  to   = module.site.module.github_oidc[0]
 }
 
 output "s3_bucket" { value = module.site.s3_bucket }
 output "cloudfront_distribution_id" { value = module.site.cloudfront_distribution_id }
 output "cloudfront_domain_name" { value = module.site.cloudfront_domain_name }
 output "site_url" { value = module.site.site_url }
-output "deploy_role_arn" { value = module.site.deploy_role_arn }
-output "terraform_role_arn" { value = module.site.terraform_role_arn }

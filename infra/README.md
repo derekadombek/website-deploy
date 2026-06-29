@@ -51,18 +51,17 @@ MANAGE (on demand): website-deploy workflow → approve env → OIDC → terrafo
 Keep the two trust targets distinct — collapsing them would let deploys and
 provisioning share trust.
 
-### Two models: split (clients) vs combined (your own)
+### One model: access config + site env
 
-- **Split** (`create_iam = false`) — the **client** runs the `aws-grant-access`
-  action once in their repo, with their creds. It creates the state backend +
-  OIDC provider + both roles, and outputs the role ARNs. **No credentials are
-  ever handed to you** — afterwards you manage everything over OIDC. Then the
-  site env (`create_iam = false`) builds only the website.
-- **Combined** (`create_iam = true`) — your own sites (e.g. `portfolio`): one
-  Terraform stack creates the roles *and* the site. The first apply uses your
-  admin creds; everything after is OIDC.
+Every site — your own (e.g. `portfolio`) and clients alike — is onboarded the
+same way. The **`aws-grant-access`** action runs once per account (with that
+account's own creds) and stands up the trust foundation in the separate access
+config (`infra/access`): the state backend + OIDC provider + deploy and
+management roles, outputting the role ARNs. **No credentials are ever handed
+over** — everything after is keyless over OIDC. The **site env** then builds only
+the website (S3 / CloudFront / DNS) and authenticates via that OIDC.
 
-## Onboarding a client (split model)
+## Onboarding (run once per site)
 
 1. **Client runs `aws-grant-access`** (their repo, their creds) with the project
    name, region, their app repo, the `mgmt-environment` (= the site env name you'll
@@ -83,10 +82,10 @@ provisioning share trust.
    `S3_BUCKET` / `CLOUDFRONT_DISTRIBUTION_ID` (from the site `terraform output`) +
    `AWS_REGION`. Push → deploy.
 
-For your **own** new site, use `--create-iam true` and apply once with admin creds
-(combined model) — no `aws-grant-access` needed.
+Your **own** sites follow the same flow — run `aws-grant-access` once for the
+account, then the site env builds the website over OIDC.
 
-**Offboarding** is clean: the client deletes the access stack (OIDC provider +
+**Offboarding** is clean: the client deletes the access config (OIDC provider +
 two roles + state) and revokes your admin on their app repo, and you're fully out
 — nothing was ever stored on your side.
 

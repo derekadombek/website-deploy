@@ -137,7 +137,8 @@ jobs:
 
 It outputs the deploy + management role ARNs. You then build the site over OIDC
 via the **Terraform** workflow (`terraform.yml`) — there's no separate provision
-action; the site env sets `create_iam = false` because the roles already exist.
+action; the site env builds only the website, since the roles already exist in
+the access config.
 
 ## Adding an action
 

@@ -27,13 +27,3 @@ output "hosted_zone_name" {
   description = "The domain whose Route 53 zone this env manages (for delegation tooling). Empty when manage_dns = false."
   value       = var.manage_dns ? var.hosted_zone_name : ""
 }
-
-output "deploy_role_arn" {
-  description = "ARN of the deploy role (combined model). Null under the split model — get it from the access stack instead."
-  value       = var.create_iam ? module.github_oidc[0].deploy_role_arn : null
-}
-
-output "terraform_role_arn" {
-  description = "ARN of the Terraform role (combined model). Null under the split model — get it from the access stack instead."
-  value       = var.create_iam ? module.github_oidc[0].terraform_role_arn : null
-}
