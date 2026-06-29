@@ -17,16 +17,8 @@ module "site" {
   # Serve www over HTTPS and 301 it to the apex.
   manage_www = true
 
-  deploy_github_repo = "derekadombek/portfolio"
-  mgmt_github_repo   = "derekadombek/website-deploy"
-  github_branch      = "main"
-  mgmt_environment   = "portfolio"
-
   # OIDC provider + roles live in the separate access config (infra/access),
   # stood up by aws-grant-access. This env builds only the site.
-
-  tf_state_bucket = "website-deploy-tf-state-west"
-  tf_lock_table   = "website-deploy-tf-locks"
 }
 
 output "s3_bucket" { value = module.site.s3_bucket }

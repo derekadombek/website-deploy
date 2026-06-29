@@ -6,14 +6,11 @@
 # the AWS side.
 #
 # Usage:
-#   infra/scripts/new-site.sh --name acme --domain acme.com \
-#     --deploy-repo acme/site [options]
+#   infra/scripts/new-site.sh --name acme --domain acme.com [options]
 #
 # Options (defaults in brackets):
 #   --project <s>                project_name           [= --name]
 #   --zone <s>                   hosted_zone_name       [= --domain]
-#   --mgmt-repo <o/r>            mgmt_github_repo        [derekadombek/website-deploy]
-#   --branch <s>                 github_branch          [main]
 #   --region <s>                 AWS region             [us-west-2]
 #   --state-bucket <s>           backend bucket         [<name>-tf-state]
 #   --lock-table <s>             backend lock table     [<name>-tf-locks]
@@ -26,8 +23,7 @@
 
 set -euo pipefail
 
-NAME="" PROJECT="" DOMAIN="" ZONE="" DEPLOY_REPO=""
-MGMT_REPO="derekadombek/website-deploy" BRANCH="main" REGION="us-west-2"
+NAME="" PROJECT="" DOMAIN="" ZONE="" REGION="us-west-2"
 STATE_BUCKET="" LOCK_TABLE="" STATE_KEY="" PROFILE=""
 MANAGE_DNS="true" CREATE_ZONE="false" REGISTRAR_R53="false" WWW="true"
 
@@ -37,9 +33,6 @@ while [ $# -gt 0 ]; do
     --project) PROJECT="$2"; shift 2;;
     --domain) DOMAIN="$2"; shift 2;;
     --zone) ZONE="$2"; shift 2;;
-    --deploy-repo) DEPLOY_REPO="$2"; shift 2;;
-    --mgmt-repo) MGMT_REPO="$2"; shift 2;;
-    --branch) BRANCH="$2"; shift 2;;
     --region) REGION="$2"; shift 2;;
     --state-bucket) STATE_BUCKET="$2"; shift 2;;
     --lock-table) LOCK_TABLE="$2"; shift 2;;
@@ -53,8 +46,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -n "${NAME}" ]        || { echo "--name is required" >&2; exit 1; }
-[ -n "${DEPLOY_REPO}" ] || { echo "--deploy-repo is required" >&2; exit 1; }
+[ -n "${NAME}" ] || { echo "--name is required" >&2; exit 1; }
 if [ "${MANAGE_DNS}" = "true" ] && [ -z "${DOMAIN}" ]; then
   echo "--domain is required when --manage-dns is true" >&2; exit 1
 fi
@@ -141,13 +133,6 @@ module "site" {
 
   # OIDC provider + deploy/Terraform roles are created once per account by the
   # aws-grant-access action (see infra/access); this stack builds only the site.
-  deploy_github_repo = "${DEPLOY_REPO}"
-  mgmt_github_repo   = "${MGMT_REPO}"
-  github_branch      = "${BRANCH}"
-  mgmt_environment   = "${NAME}"
-
-  tf_state_bucket = "${STATE_BUCKET}"
-  tf_lock_table   = "${LOCK_TABLE}"
 }
 
 output "s3_bucket" { value = module.site.s3_bucket }

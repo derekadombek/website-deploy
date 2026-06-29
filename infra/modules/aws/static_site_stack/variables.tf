@@ -56,39 +56,3 @@ variable "manage_www" {
   type        = bool
   default     = false
 }
-
-# --- OIDC trust targets -----------------------------------------------------
-variable "deploy_github_repo" {
-  description = "App repo whose pushes deploy the site (deploy role trust, branch-scoped)."
-  type        = string
-}
-
-variable "mgmt_github_repo" {
-  description = "Repo that runs Terraform for this env (Terraform role trust, environment-scoped)."
-  type        = string
-  default     = "derekadombek/website-deploy"
-}
-
-variable "github_branch" {
-  description = "Branch of the app repo allowed to deploy."
-  type        = string
-  default     = "main"
-}
-
-variable "mgmt_environment" {
-  description = "GitHub Environment (in mgmt repo) the Terraform role trust is scoped to."
-  type        = string
-  default     = "provisioning"
-}
-
-
-# --- Terraform state (scopes the Terraform role; must match the env backend) -
-variable "tf_state_bucket" {
-  description = "S3 bucket holding this env's Terraform state (in this same account)."
-  type        = string
-}
-
-variable "tf_lock_table" {
-  description = "DynamoDB table used for this env's Terraform state locking."
-  type        = string
-}
