@@ -16,9 +16,6 @@ on:
         description: Domain the site is served at, e.g. acme.com. Leave blank when manage_dns is false (serves the CloudFront default URL).
         required: false
         default: ""
-      deploy_github_repo:
-        description: App repo that deploys the site (owner/name).
-        required: true
       manage_dns:
         description: Provision an ACM cert + Route 53 records for site_domain. False = serve the CloudFront default URL (no domain needed).
         type: boolean
@@ -65,7 +62,6 @@ jobs:
           infra/scripts/new-site.sh \
             --name "${{ inputs.name }}" \
             --domain "${{ inputs.site_domain }}" \
-            --deploy-repo "${{ inputs.deploy_github_repo }}" \
             ${{ inputs.hosted_zone_name != '' && format('--zone "{0}"', inputs.hosted_zone_name) || '' }} \
             --region "${{ inputs.aws_region }}" \
             --manage-dns "${{ inputs.manage_dns }}" \

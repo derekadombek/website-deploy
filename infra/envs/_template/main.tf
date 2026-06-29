@@ -34,18 +34,8 @@ module "site" {
 
   # OIDC provider + deploy/Terraform roles are created once per account by the
   # aws-grant-access action (see infra/access); this stack builds only the site.
-
-  # OIDC trust targets — keep these two distinct.
-  deploy_github_repo = "owner/app-repo"              # deploy role: the app repo
-  mgmt_github_repo   = "derekadombek/website-deploy" # terraform role: this repo
-  github_branch      = "main"
-  # Must equal this env's GitHub Environment name (where its AWS_TF_ROLE_ARN +
-  # reviewers live) — convention: same as the env dir name.
-  mgmt_environment = "REPLACE"
-
-  # Must match the backend block in versions.tf (scopes the Terraform role).
-  tf_state_bucket = "REPLACE-tf-state"
-  tf_lock_table   = "REPLACE-tf-locks"
+  # The deploy repo, mgmt environment, and state backend are configured there +
+  # in versions.tf — convention: the GitHub Environment name = this env dir name.
 }
 
 output "s3_bucket" { value = module.site.s3_bucket }

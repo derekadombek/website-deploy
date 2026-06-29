@@ -28,16 +28,6 @@ module "site" {
 
   # The client ran aws-grant-access first, so the OIDC provider + roles already
   # exist (see infra/access). This stack builds only the site, over OIDC.
-
-  # Deploy role trusts the CLIENT's app repo; Terraform role trusts this repo.
-  # The client owns the app repo and adds you as admin (clean offboarding).
-  deploy_github_repo = "example-client/website"
-  mgmt_github_repo   = "derekadombek/website-deploy"
-  github_branch      = "main"
-  mgmt_environment   = "example-client"
-
-  tf_state_bucket = "example-client-tf-state"
-  tf_lock_table   = "example-client-tf-locks"
 }
 
 output "s3_bucket" { value = module.site.s3_bucket }
