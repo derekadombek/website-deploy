@@ -1,0 +1,56 @@
+name: Register CI environment
+
+# Owner-only: put a site env under CI management. Creates the GitHub Environment
+# (named the same as the env dir), sets its scoped AWS_TF_ROLE_ARN + AWS_REGION
+# variables, and adds a required reviewer. Run once per env, after aws-grant-access
+# has created the roles — paste the terraform role ARN + region it printed.
+#
+# AUTH: the default GITHUB_TOKEN CANNOT manage environments or Actions variables
+# (those need repo-admin permissions it can't be granted, even in this repo). So
+# this workflow uses a PAT supplied as the `REGISTER_CI_TOKEN` secret.
+#   Create a fine-grained PAT scoped to derekadombek/website-deploy with:
+#     - Environments: Read and write
+#     - Variables:    Read and write
+#   then add it as the repo secret REGISTER_CI_TOKEN.
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: Env dir name = GitHub Environment name (e.g. boisevalleydetailing).
+        required: true
+      terraform_role_arn:
+        description: Terraform/management role ARN (from the aws-grant-access output).
+        required: true
+      aws_region:
+        description: AWS region.
+        required: false
+        default: us-west-2
+      reviewer:
+        description: GitHub login to require as reviewer (blank = the token owner).
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  register:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restrict to owner
+        if: github.actor != 'derekadombek'
+        run: |
+          echo "Only the repo owner may run this workflow (actor: ${{ github.actor }})." >&2
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - name: Register CI environment
+        env:
+          GH_TOKEN: ${{ secrets.REGISTER_CI_TOKEN }}
+        run: |
+          infra/scripts/register-ci-env.sh \
+            "${{ inputs.env }}" \
+            "${{ inputs.terraform_role_arn }}" \
+            "${{ inputs.aws_region }}" \
+            "${{ inputs.reviewer }}"
