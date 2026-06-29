@@ -17,6 +17,10 @@ module "site" {
   registrar_in_route53 = false
   manage_www           = true
 
+  # Multi-page site (real per-directory index.html) — serve its own 404 page
+  # instead of the SPA-style fallback to /index.html.
+  error_page_path = "/error.html"
+
   # OIDC provider + deploy/Terraform roles are created once per account by the
   # aws-grant-access action (see infra/access); this stack builds only the site.
 }
