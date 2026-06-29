@@ -86,6 +86,14 @@ the website (S3 / CloudFront / DNS) and authenticates via that OIDC.
 Your **own** sites follow the same flow — run `aws-grant-access` once for the
 account, then the site env builds the website over OIDC.
 
+**Adding a domain later** — a site scaffolded with `manage_dns = false` serves the
+CloudFront default URL. To attach a real domain, run the **Set site domain**
+workflow (or `set-site-domain.sh <env> --domain <d> [--create-zone …]`), which
+flips `manage_dns = true` + sets the domain in the existing env and opens a PR.
+Merge, then re-provision — it's an additive in-place change (CloudFront gets the
+alias + ACM cert; content untouched). Don't re-run New TF env; it won't overwrite
+an existing env.
+
 **Offboarding** is clean: the client deletes the access config (OIDC provider +
 two roles + state) and revokes your admin on their app repo, and you're fully out
 — nothing was ever stored on your side.
