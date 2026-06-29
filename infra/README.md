@@ -68,11 +68,12 @@ the website (S3 / CloudFront / DNS) and authenticates via that OIDC.
    use), and a state bucket/lock name. It stands up the trust foundation and prints
    the **deploy + management role ARNs**.
 2. **You create the site env** — run the **New site env** workflow (or
-   `new-site.sh --name <env> --domain … --deploy-repo … --create-iam false`),
-   review the PR, merge. Point its backend at the state bucket from step 1.
-3. **Register CI** — `infra/scripts/register-ci-env.sh <env>` creates the env's
-   GitHub Environment, sets `AWS_TF_ROLE_ARN` (the management role from step 1) +
-   `AWS_REGION`, and adds you as reviewer.
+   `new-site.sh --name <env> --domain …`), review the PR, merge. Point its
+   backend at the state bucket from step 1.
+3. **Register CI** — `register-ci-env.sh <env> <terraform-role-arn> <region>`
+   (the role ARN + region are printed by aws-grant-access in step 1) creates the
+   env's GitHub Environment, sets `AWS_TF_ROLE_ARN` + `AWS_REGION`, and adds you
+   as reviewer.
 4. **Provision the site** — over OIDC via `terraform.yml` (approve the env), or
    locally for the first apply with the DNS-delegation babysitting:
    ```bash
@@ -161,7 +162,8 @@ The env's Terraform config sets `mgmt_environment = "<name>"` so its role trusts
 Every env is **auto-validated**. An env becomes CI **plan/apply**-managed simply by having
 a GitHub Environment with its name — that's the opt-in. So onboarding a client to CI is:
 create the `<name>` environment, add `AWS_TF_ROLE_ARN` + `AWS_REGION` + reviewers (the
-`register-ci-env.sh` script does this from `terraform output`).
+`register-ci-env.sh` script does this — pass it the role ARN + region that
+aws-grant-access printed).
 
 ## Verify
 
