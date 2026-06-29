@@ -31,10 +31,6 @@ on:
         description: AWS region.
         required: false
         default: us-west-2
-      create_oidc_provider:
-        description: Create the account's GitHub OIDC provider (true for the first env in an account).
-        type: boolean
-        default: true
       create_hosted_zone:
         description: Create the Route 53 zone (client has no Route 53 yet).
         type: boolean
@@ -73,7 +69,6 @@ jobs:
             ${{ inputs.hosted_zone_name != '' && format('--zone "{0}"', inputs.hosted_zone_name) || '' }} \
             --region "${{ inputs.aws_region }}" \
             --manage-dns "${{ inputs.manage_dns }}" \
-            --create-oidc-provider "${{ inputs.create_oidc_provider }}" \
             --create-zone "${{ inputs.create_hosted_zone }}" \
             --registrar-in-route53 "${{ inputs.registrar_in_route53 }}" \
             --www "${{ inputs.manage_www }}"

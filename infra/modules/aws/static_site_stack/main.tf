@@ -177,24 +177,6 @@ resource "aws_route53_record" "www_aaaa" {
   }
 }
 
-# Keyless CI roles: deploy role (app repo, branch-scoped) + Terraform role
-# (mgmt repo, environment-scoped), both scoped to this site's resources.
-#
-# create_iam = false skips this entirely — for the split model, where the client
-# runs aws-grant-access first to create the OIDC provider + roles + state bucket,
-# and this stack only builds the site (over OIDC, create_oidc_provider = false).
-module "github_oidc" {
-  count  = var.create_iam ? 1 : 0
-  source = "../github_oidc"
-
-  name_prefix          = var.project_name
-  deploy_github_repo   = var.deploy_github_repo
-  github_branch        = var.github_branch
-  mgmt_github_repo     = var.mgmt_github_repo
-  mgmt_environment     = var.mgmt_environment
-  create_oidc_provider = var.create_oidc_provider
-  bucket_arn           = module.static_site.bucket_arn
-  distribution_arn     = module.static_site.distribution_arn
-  tf_state_bucket      = var.tf_state_bucket
-  tf_lock_table        = var.tf_lock_table
-}
+# Keyless CI roles (OIDC provider + deploy/Terraform roles) live in the separate
+# access config (infra/access), stood up once per account by the aws-grant-access
+# action. This stack builds only the site and authenticates over that OIDC.
