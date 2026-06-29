@@ -25,10 +25,6 @@ on:
         description: AWS region.
         required: false
         default: us-west-2
-      reviewer:
-        description: GitHub login to require as reviewer (blank = the token owner).
-        required: false
-        default: ""
 
 permissions:
   contents: read
@@ -52,5 +48,4 @@ jobs:
           infra/scripts/register-ci-env.sh \
             "${{ inputs.env }}" \
             "${{ inputs.terraform_role_arn }}" \
-            "${{ inputs.aws_region }}" \
-            "${{ inputs.reviewer }}"
+            "${{ inputs.aws_region }}"
