@@ -4,7 +4,7 @@
 # scaffolds a site that serves the CloudFront default URL (manage_dns = false);
 # this flips it to a managed domain: sets manage_dns = true + site_domain +
 # hosted_zone_name and the DNS-creation flags, in place. Commit the result and
-# re-provision via terraform.yml — it's an additive, in-place change (the
+# re-provision via the provisioning workflow — it's an additive, in-place change (the
 # CloudFront distribution gets the alias + cert; content is untouched).
 #
 # Does NOT re-run new-site.sh (that refuses to overwrite an existing env). Edits
@@ -70,6 +70,6 @@ terraform fmt "${ENV_DIR}" >/dev/null 2>&1 || true
 echo "set domain on ${ENV}:"
 echo "  site_domain=${DOMAIN} hosted_zone_name=${ZONE} manage_dns=true"
 echo "  create_hosted_zone=${CREATE_ZONE} registrar_in_route53=${REGISTRAR_R53} manage_www=${WWW}"
-echo "Next: review + commit, then re-provision via terraform.yml. If the domain's"
+echo "Next: review + commit, then re-provision via the provisioning workflow. If the domain's"
 echo "Route 53 zone is new + registered elsewhere, delegate the NS before the ACM"
 echo "validation can finish (see onboard-site.sh)."

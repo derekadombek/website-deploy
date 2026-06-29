@@ -1,4 +1,4 @@
-name: Terraform
+name: Provision Client's AWS Setup
 
 # Provision/manage sites in infra/envs/*. Manual only: you dispatch it and pick
 # the env (or "all"), so you always explicitly choose what runs — no surprise

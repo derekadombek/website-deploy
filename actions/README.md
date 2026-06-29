@@ -136,7 +136,7 @@ jobs:
 ```
 
 It outputs the deploy + management role ARNs. You then build the site over OIDC
-via the **Terraform** workflow (`terraform.yml`) — there's no separate provision
+via the **Provision Client's AWS Setup** workflow — there's no separate provision
 action; the site env builds only the website, since the roles already exist in
 the access config.
 

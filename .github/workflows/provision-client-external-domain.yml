@@ -1,0 +1,83 @@
+name: Provision Client's External Domain for AWS
+
+# Two-phase provision for a site whose domain is registered OUTSIDE Route 53.
+#
+#   Phase 1 (create-zone): creates just the Route 53 hosted zone and prints its
+#     4 nameservers to the job summary, then the run PAUSES.
+#   --- you copy those nameservers into your external registrar ---
+#   Phase 2 (finish): APPROVE the second job to resume. It waits for the
+#     delegation to actually go live (dig poll), then runs the full apply so ACM
+#     validation succeeds and CloudFront gets the domain + cert.
+#
+# For an AWS-registered domain (registrar_in_route53 = true) or a default-URL
+# site, DON'T use this — "Provision Client's AWS Setup" auto-delegates / needs no
+# delegation.
+#
+# Note: both jobs run in the env's GitHub Environment (for the OIDC role), so
+# you'll approve twice — once to start (create the zone), once to resume after
+# you've set the nameservers. The wait/poll only runs after that second approval.
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: Env to provision (domain registered at an external registrar).
+        type: choice
+        # Keep in sync with provision-client-aws.yml / teardown-client-aws.yml.
+        options:
+          - boisevalleydetailing
+          - example-client
+          - portfolio
+      confirm_fresh:
+        description: First-ever provision of this env (empty Terraform state)?
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write # OIDC token to assume the AWS role
+  contents: read
+
+# Per-env group so a long human pause here doesn't block other envs' Terraform
+# runs. (Same-env races are still prevented by the Terraform state lock.)
+concurrency:
+  group: provision-external-dns-${{ inputs.env }}
+  cancel-in-progress: false
+
+jobs:
+  create-zone:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.env }} # approval #1: start (mints the OIDC role)
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false # so `terraform output` is readable by the script
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TF_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Create zone + print nameservers
+        env:
+          CONFIRM_FRESH: ${{ inputs.confirm_fresh }}
+        run: |
+          infra/scripts/onboard-site.sh --phase create-zone "${{ inputs.env }}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  finish:
+    needs: create-zone
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.env }} # approval #2 = your "resume" after delegating
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+      - name: Install dig
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq dnsutils
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TF_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Wait for delegation + full apply
+        run: |
+          infra/scripts/onboard-site.sh --phase finish "${{ inputs.env }}"

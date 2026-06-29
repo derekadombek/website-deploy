@@ -1,4 +1,4 @@
-name: Register CI environment
+name: Set CI Environment
 
 # Owner-only: put a site env under CI management. Creates the GitHub Environment
 # (named the same as the env dir), sets its scoped AWS_TF_ROLE_ARN + AWS_REGION
