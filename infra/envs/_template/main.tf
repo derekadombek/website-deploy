@@ -32,6 +32,10 @@ module "site" {
   # Also serve www.<domain> over HTTPS and 301-redirect it to the apex.
   manage_www = false
 
+  # Page served (404) for missing paths. Default "/index.html" (SPA fallback);
+  # set "/error.html" for a multi-page site with its own error page.
+  # error_page_path = "/index.html"
+
   # OIDC provider + deploy/Terraform roles are created once per account by the
   # aws-grant-access action (see infra/access); this stack builds only the site.
   # The deploy repo, mgmt environment, and state backend are configured there +

@@ -56,3 +56,12 @@ variable "manage_www" {
   type        = bool
   default     = false
 }
+
+variable "error_page_path" {
+  description = <<-EOT
+    Page served (404 status) for missing paths. Default "/index.html" (SPA-style
+    fallback); set to a real page like "/error.html" for multi-page sites.
+  EOT
+  type        = string
+  default     = "/index.html"
+}
