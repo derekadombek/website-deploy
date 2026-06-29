@@ -83,7 +83,9 @@ infra/                          provisioning catalog        (→ infra/README.md
   envs/                          one dir per site: _template, portfolio,
                                  example-client
 .github/workflows/
-  terraform.yml                  per-env plan/apply, gated by the provisioning env
+  provision-client-aws.yml       per-env plan/apply, gated by the env's approval
+  (+ teardown / new-client-env / configure-client-domain / set-ci-environment /
+   provision-client-external-domain)
 ```
 
 ## Onboarding a site (short version)

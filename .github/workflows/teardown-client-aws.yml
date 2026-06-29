@@ -1,4 +1,4 @@
-name: Terraform destroy
+name: Teardown Client's AWS Setup
 
 # DANGER: permanently destroys a site env's infrastructure (S3 + CloudFront +
 # any DNS/ACM). Use to spin a site down between tests so it stops billing.
@@ -14,7 +14,7 @@ on:
       env:
         description: Env to DESTROY.
         type: choice
-        # Keep in sync with terraform.yml (no "all" — destroy one env at a time).
+        # Keep in sync with provision-client-aws.yml (no "all" — destroy one env at a time).
         options:
           - boisevalleydetailing
           - example-client
@@ -28,7 +28,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: terraform-${{ github.ref }} # shared with terraform.yml so apply/destroy never race on state
+  group: terraform-${{ github.ref }} # shared with provision-client-aws.yml so apply/destroy never race on state
   cancel-in-progress: false
 
 jobs:

@@ -67,15 +67,16 @@ the website (S3 / CloudFront / DNS) and authenticates via that OIDC.
    name, region, their app repo, the `mgmt-environment` (= the site env name you'll
    use), and a state bucket/lock name. It stands up the trust foundation and prints
    the **deploy + management role ARNs**.
-2. **You create the site env** — run the **New site env** workflow (or
-   `new-site.sh --name <env> --domain …`), review the PR, merge. Point its
+2. **You create the site env** — run the **New Client TF Environment** workflow
+   (or `new-site.sh --name <env> --domain …`), review the PR, merge. Point its
    backend at the state bucket from step 1.
 3. **Register CI** — `register-ci-env.sh <env> <terraform-role-arn> <region>`
    (the role ARN + region are printed by aws-grant-access in step 1) creates the
    env's GitHub Environment, sets `AWS_TF_ROLE_ARN` + `AWS_REGION`, and adds you
    as reviewer.
-4. **Provision the site** — over OIDC via `terraform.yml` (approve the env), or
-   locally for the first apply with the DNS-delegation babysitting:
+4. **Provision the site** — over OIDC via the **Provision Client's AWS Setup**
+   workflow (approve the env), or locally for the first apply with the
+   DNS-delegation babysitting:
    ```bash
    CONFIRM_FRESH=1 infra/scripts/onboard-site.sh <env>
    ```
@@ -87,12 +88,21 @@ Your **own** sites follow the same flow — run `aws-grant-access` once for the
 account, then the site env builds the website over OIDC.
 
 **Adding a domain later** — a site scaffolded with `manage_dns = false` serves the
-CloudFront default URL. To attach a real domain, run the **Set site domain**
-workflow (or `set-site-domain.sh <env> --domain <d> [--create-zone …]`), which
-flips `manage_dns = true` + sets the domain in the existing env and opens a PR.
-Merge, then re-provision — it's an additive in-place change (CloudFront gets the
-alias + ACM cert; content untouched). Don't re-run New TF env; it won't overwrite
-an existing env.
+CloudFront default URL. To attach a real domain, run the **Configure Client
+Domain** workflow (or `set-site-domain.sh <env> --domain <d> [--create-zone …]`),
+which flips `manage_dns = true` + sets the domain in the existing env and opens a
+PR. Merge, then re-provision — it's an additive in-place change (CloudFront gets
+the alias + ACM cert; content untouched). Don't re-run New Client TF Environment;
+it won't overwrite an existing env.
+
+- **Domain registered in Route 53** (`registrar_in_route53 = true`) → delegation
+  is automatic; just re-provision with **Provision Client's AWS Setup**.
+- **Domain at an external registrar** → use the **Provision Client's External
+  Domain for AWS** workflow: it creates the zone, prints the 4 nameservers, and
+  pauses; you set
+  those NS at the registrar, then approve the second job to resume — it waits for
+  the delegation to go live, then finishes the apply (so ACM validation doesn't
+  hang). Locally, `onboard-site.sh <env>` does the same babysitting in one run.
 
 **Offboarding** is clean: the client deletes the access config (OIDC provider +
 two roles + state) and revokes your admin on their app repo, and you're fully out
@@ -135,7 +145,7 @@ For a client keeping DNS elsewhere entirely (Cloudflare, etc.), use
 
 All accounts' Terraform roles trust the same `environment:provisioning` subject, so a
 **single** `provisioning` environment in this repo gates every client — and since each
-client is its own `terraform.yml` matrix leg, each waits for its own approval. Only
+client is its own `provision-client-aws.yml` matrix leg, each waits for its own approval. Only
 make per-client environments (set `mgmt_environment` + a matching GitHub Environment)
 if a client needs **different reviewers**.
 
@@ -161,7 +171,7 @@ The env's Terraform config sets `mgmt_environment = "<name>"` so its role trusts
 
 ### Which envs CI runs
 
-`terraform.yml` never plans/applies every env at once:
+`provision-client-aws.yml` never plans/applies every env at once:
 
 - **push / PR** → only the envs whose files changed (a `infra/modules/**` change counts
   as all, since modules are shared).
