@@ -15,9 +15,16 @@ on:
   workflow_dispatch:
     inputs:
       env:
-        description: 'Env to run — an infra/envs/<name>, or "all".'
-        required: false
+        description: Env to run.
+        type: choice
         default: all
+        # Static list — workflow_dispatch dropdowns can't auto-detect infra/envs.
+        # Add a line here when you onboard a new site.
+        options:
+          - all
+          - boisevalleydetailing
+          - example-client
+          - portfolio
 
 permissions:
   id-token: write # OIDC token to assume the AWS role
