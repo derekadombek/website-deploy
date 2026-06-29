@@ -22,10 +22,10 @@ REVIEWER="${4:-}"
 # The GitHub Environment is independent of the Terraform config, so this can run
 # any time (e.g. straight after aws-grant-access, before the env PR merges). We
 # only warn — not block — if the matching env dir doesn't exist yet, since the
-# name must eventually match it (terraform.yml keys off the env dir name).
+# name must eventually match it (the provisioning workflow keys off the env dir name).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_DIR="${SCRIPT_DIR}/../envs/${ENV_NAME}"
-[ -d "${ENV_DIR}" ] || echo "warning: no env dir 'infra/envs/${ENV_NAME}' yet — make sure '${ENV_NAME}' matches the env dir name terraform.yml will use." >&2
+[ -d "${ENV_DIR}" ] || echo "warning: no env dir 'infra/envs/${ENV_NAME}' yet — make sure '${ENV_NAME}' matches the env dir name the provisioning workflow will use." >&2
 
 REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
 

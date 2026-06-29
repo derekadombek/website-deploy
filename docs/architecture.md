@@ -40,8 +40,10 @@ A visitor hits the site (e.g. `https://derekadombek.com`):
 - **Remote state, per account.** Each `infra/envs/<site>` keeps its own S3 +
   DynamoDB backend in its own account — no shared state bucket. The one-time
   bootstrap creates it (see [`../infra/README.md`](../infra/README.md)).
-- **CI is fully wired.** `terraform.yml` runs `fmt`/`validate` on every push/PR and
-  plans/applies per env behind the `provisioning` environment's approval.
+- **CI is fully wired.** `provision-client-aws.yml` is dispatched manually per env
+  (validate → plan → apply) behind that env's GitHub Environment approval;
+  `teardown-client-aws.yml` destroys, and `provision-client-external-domain.yml`
+  handles external-registrar DNS delegation.
 - **Phase 2 (deferred):** automate per-client onboarding — wrap the one-time
   bootstrap and push the four deploy Variables from `terraform output` via `gh`.
 - A natural follow-on demo: add automated backups and uptime monitoring on top of
