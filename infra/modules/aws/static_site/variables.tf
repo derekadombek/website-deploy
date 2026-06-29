@@ -35,3 +35,14 @@ variable "viewer_request_function_arn" {
   type        = string
   default     = ""
 }
+
+variable "error_page_path" {
+  description = <<-EOT
+    Page served (with a 404 status) when a request misses — the private bucket
+    returns 403 for missing keys, so CloudFront maps that to this page. Default
+    "/index.html" suits SPA-style fallback; multi-page sites can point it at a
+    real error page like "/error.html".
+  EOT
+  type        = string
+  default     = "/index.html"
+}
