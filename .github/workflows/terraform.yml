@@ -1,10 +1,10 @@
 name: Terraform
 
-# Provision/manage sites in infra/envs/*. A setup job decides WHICH envs run:
-#   - workflow_dispatch → the env you pick (or "all")
-#   - push / PR         → only the envs whose files changed (a module change
-#                         counts as all, since modules are shared)
-# so you never run every client's plan/apply at once.
+# Provision/manage sites in infra/envs/*. Manual only: you dispatch it and pick
+# the env (or "all"), so you always explicitly choose what runs — no surprise
+# plan/apply on every push/merge. A dispatch does validate → plan → (approve) →
+# apply, so the plan is visible in the run and the environment approval is the
+# control point before anything is applied.
 #
 # An env is CI-managed iff a GitHub Environment with its name exists. That
 # environment holds the client's AWS_TF_ROLE_ARN + AWS_REGION (scoped variables)
@@ -12,11 +12,6 @@ name: Terraform
 # OIDC token the env's Terraform role trusts. Validate-only envs (no environment)
 # are still checked, just never planned/applied.
 on:
-  push:
-    branches: [main]
-    paths: ["infra/**", ".github/workflows/terraform.yml"]
-  pull_request:
-    paths: ["infra/**", ".github/workflows/terraform.yml"]
   workflow_dispatch:
     inputs:
       env:
@@ -27,7 +22,6 @@ on:
 permissions:
   id-token: write # OIDC token to assume the AWS role
   contents: read
-  pull-requests: write # post the plan as a PR comment
 
 concurrency:
   group: terraform-${{ github.ref }}
@@ -44,16 +38,11 @@ jobs:
       has_apply: ${{ steps.scope.outputs.has_apply }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0 # need history to diff changed envs
 
       - name: Compute target envs
         id: scope
         env:
-          EVENT: ${{ github.event_name }}
           SELECTION: ${{ github.event.inputs.env }}
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          BEFORE_SHA: ${{ github.event.before }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -66,26 +55,14 @@ jobs:
           # opt-in: create the environment to put a client under CI management.
           ci_envs=$(gh api "repos/${GITHUB_REPOSITORY}/environments" --paginate --jq '.environments[].name' 2>/dev/null || true)
 
-          # Determine the in-scope env names.
-          if [ "$EVENT" = "workflow_dispatch" ]; then
-            if [ -z "$SELECTION" ] || [ "$SELECTION" = "all" ]; then
-              scope="$all_envs"
-            elif echo "$all_envs" | grep -qx "$SELECTION"; then
-              scope="$SELECTION"
-            else
-              echo "::error::No such env '$SELECTION'. Options: all, $(echo $all_envs | tr '\n' ' ')"
-              exit 1
-            fi
+          # In-scope env(s) from the dispatch input (one env, or "all").
+          if [ -z "$SELECTION" ] || [ "$SELECTION" = "all" ]; then
+            scope="$all_envs"
+          elif echo "$all_envs" | grep -qx "$SELECTION"; then
+            scope="$SELECTION"
           else
-            if [ "$EVENT" = "pull_request" ]; then base="$BASE_SHA"; else base="$BEFORE_SHA"; fi
-            if ! git rev-parse --verify "${base:-}" >/dev/null 2>&1; then base="$(git rev-parse HEAD~1 2>/dev/null || git rev-parse HEAD)"; fi
-            changed=$(git diff --name-only "$base" HEAD)
-            # A shared change (modules or this workflow) affects every env.
-            if echo "$changed" | grep -qE '^(infra/modules/|\.github/workflows/terraform\.yml)'; then
-              scope="$all_envs"
-            else
-              scope=$(echo "$changed" | sed -n 's#^infra/envs/\([^/]*\)/.*#\1#p' | sort -u)
-            fi
+            echo "::error::No such env '$SELECTION'. Options: all, $(echo $all_envs | tr '\n' ' ')"
+            exit 1
           fi
 
           j() { printf '%s\n' $1 | jq -R . | jq -cs 'map(select(length>0))'; }
@@ -154,28 +131,12 @@ jobs:
       - name: Init
         run: terraform init -input=false
       - name: Plan
-        id: plan
-        run: terraform plan -no-color -input=false -out=tfplan
-      - name: Comment plan on PR
-        if: github.event_name == 'pull_request'
-        uses: actions/github-script@v7
-        env:
-          PLAN: ${{ steps.plan.outputs.stdout }}
-          ENVNAME: ${{ matrix.env }}
-        with:
-          script: |
-            const body = `#### Terraform Plan — \`${process.env.ENVNAME}\` 📖\n\`\`\`\n${process.env.PLAN}\n\`\`\``;
-            await github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: body.length > 65000 ? body.slice(0, 65000) + '\n…truncated' : body,
-            });
+        run: terraform plan -no-color -input=false
 
-  # Apply on merge to main or manual dispatch, after the same approval.
+  # Apply after the plan + approval.
   apply:
     needs: [setup, validate, plan]
-    if: needs.setup.outputs.has_apply == 'true' && github.event_name != 'pull_request'
+    if: needs.setup.outputs.has_apply == 'true'
     runs-on: ubuntu-latest
     environment: ${{ matrix.env }}
     strategy:
