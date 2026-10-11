@@ -14,7 +14,7 @@ name: Grant AWS access (one-time onboarding)
 #   2. Add them as repo secrets with those names.
 # After it succeeds:
 #   3. DELETE the three secrets (the session expires anyway, but don't leave them).
-#   4. Send the account id (printed at the end) to Derek.
+#   4. Send the account id to Derek (the 12 digits in the role ARNs printed at the end).
 
 on:
   workflow_dispatch:
