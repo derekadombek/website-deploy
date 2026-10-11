@@ -1,8 +1,0 @@
-# Boise Valley Detailing — no domain yet, served on the CloudFront default URL.
-provider: aws
-account_id: "349788921554"
-region: us-west-2
-app_repo: derekadombek/boisevalleydetailing
-domain: ""
-# Multi-page site — serve its own 404 page instead of the SPA fallback.
-error_page: /error.html

@@ -1,0 +1,16 @@
+# Bob's Fishing Tours — fictional demo client, in its own AWS account (the
+# account that used to host boisevalleydetailing).
+provider: aws
+account_id: "349788921554"
+region: us-west-2
+app_repo: derekadombek/bobs-fishing-tours
+# Zone lives in this account; delegated from derekadombek.com (portfolio account)
+# with an NS record named `bob`.
+domain: bob.derekadombek.com
+dns: external
+www: false
+# Multi-page site with its own 404 page.
+error_page: /error.html
+# Reuses the account's existing state backend (created for boisevalleydetailing).
+state_bucket: boisevalleydetailing-tf-state
+lock_table: boisevalleydetailing-tf-locks
