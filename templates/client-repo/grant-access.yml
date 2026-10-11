@@ -1,0 +1,81 @@
+name: Grant AWS access (one-time onboarding)
+
+# Copy into the client's app repo as .github/workflows/grant-access.yml.
+#
+# Stands up the trust foundation in the client's AWS account so
+# derekadombek/website-deploy can manage it over OIDC: creates the Terraform
+# state backend + GitHub OIDC provider + deploy role + management role. Run it
+# ONCE; after that everything is keyless and this workflow never needs to run
+# again (re-running is a safe no-op).
+#
+# Before running — privileged, SHORT-LIVED creds for the account:
+#   1. AWS access portal → the account → "Access keys" → copy the temporary
+#      AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN.
+#   2. Add them as repo secrets with those names.
+# After it succeeds:
+#   3. DELETE the three secrets (the session expires anyway, but don't leave them).
+#   4. Send the account id (printed at the end) to Derek.
+
+on:
+  workflow_dispatch:
+    inputs:
+      client-name:
+        description: Client name — must match clients/<name>.yaml in website-deploy
+        required: true
+      aws-region:
+        description: AWS region for the state + site buckets
+        required: true
+        default: us-west-2
+      state-bucket:
+        description: Terraform state bucket (blank = <client-name>-tf-state)
+        required: false
+        default: ""
+      lock-table:
+        description: Terraform lock table (blank = <client-name>-tf-locks)
+        required: false
+        default: ""
+      github-branch:
+        description: Branch of this repo allowed to deploy the site
+        required: true
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  grant-access:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve names
+        id: names
+        env:
+          NAME: ${{ inputs.client-name }}
+          BUCKET: ${{ inputs.state-bucket }}
+          TABLE: ${{ inputs.lock-table }}
+        run: |
+          echo "$NAME" | grep -qE '^[a-z0-9][a-z0-9-]*$' || { echo "::error::client-name must be lowercase letters, digits, dashes"; exit 1; }
+          echo "state-bucket=${BUCKET:-$NAME-tf-state}" >> "$GITHUB_OUTPUT"
+          echo "lock-table=${TABLE:-$NAME-tf-locks}" >> "$GITHUB_OUTPUT"
+
+      # OIDC doesn't exist yet — this workflow creates it — so it needs the
+      # short-lived privileged creds from the repo secrets (see top).
+      - name: Configure AWS credentials (privileged, short-lived)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ inputs.aws-region }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+
+      - name: Grant access
+        uses: derekadombek/website-deploy/actions/aws-grant-access@v1
+        with:
+          aws-region: ${{ inputs.aws-region }}
+          project-name: ${{ inputs.client-name }}
+          deploy-github-repo: ${{ github.repository }}
+          mgmt-environment: ${{ inputs.client-name }}
+          state-bucket: ${{ steps.names.outputs.state-bucket }}
+          lock-table: ${{ steps.names.outputs.lock-table }}
+          github-branch: ${{ inputs.github-branch }}
