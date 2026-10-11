@@ -41,7 +41,7 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ACCESS_DIR="${SCRIPT_DIR}/../access"
 
-# 1. State backend (CLI — no Terraform state needed to create it).
+# 1. State backend (CLI — creates the bucket + lock table if they're missing).
 "${SCRIPT_DIR}/bootstrap-backend.sh" "${STATE_BUCKET}" "${LOCK_TABLE}" "${REGION}"
 
 # 2. Access Terraform, state stored in the bucket just created.
@@ -53,7 +53,23 @@ terraform init -input=false -reconfigure \
   -backend-config="dynamodb_table=${LOCK_TABLE}" \
   -backend-config="encrypt=true"
 
+# 3. The account can only have ONE GitHub OIDC provider. Create it unless the
+#    account already has one; if it does, reuse it — except when it's this
+#    access stack's own (in state), which must stay managed here.
+OIDC_URL="token.actions.githubusercontent.com"
+if terraform state list 2>/dev/null | grep -q 'aws_iam_openid_connect_provider.github'; then
+  CREATE_OIDC=true
+  echo "OIDC provider: managed by this access stack — keeping it"
+elif aws iam list-open-id-connect-providers --query 'OpenIDConnectProviderList[].Arn' --output text | tr '\t' '\n' | grep -q "/${OIDC_URL}\$"; then
+  CREATE_OIDC=false
+  echo "OIDC provider: already exists in this account — reusing it"
+else
+  CREATE_OIDC=true
+  echo "OIDC provider: none yet — creating it"
+fi
+
 terraform apply -auto-approve -input=false \
+  -var="create_oidc_provider=${CREATE_OIDC}" \
   -var="aws_region=${REGION}" \
   -var="project_name=${PROJECT}" \
   -var="deploy_github_repo=${DEPLOY_REPO}" \

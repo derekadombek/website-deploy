@@ -24,7 +24,7 @@ module "github_oidc" {
   github_branch        = var.github_branch
   mgmt_github_repo     = var.mgmt_github_repo
   mgmt_environment     = var.mgmt_environment
-  create_oidc_provider = true
+  create_oidc_provider = var.create_oidc_provider
 
   bucket_arn       = "arn:aws:s3:::${var.project_name}-site-${data.aws_caller_identity.current.account_id}"
   distribution_arn = "*"
