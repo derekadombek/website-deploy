@@ -1,5 +1,4 @@
-# Bob's Fishing Tours — fictional demo client, in its own AWS account (the
-# account that used to host boisevalleydetailing).
+# Bob's Fishing Tours — fictional demo client, in its own AWS account.
 provider: aws
 account_id: "349788921554"
 region: us-west-2
@@ -11,6 +10,3 @@ dns: external
 www: false
 # Multi-page site with its own 404 page.
 error_page: /error.html
-# Reuses the account's existing state backend (created for boisevalleydetailing).
-state_bucket: boisevalleydetailing-tf-state
-lock_table: boisevalleydetailing-tf-locks
