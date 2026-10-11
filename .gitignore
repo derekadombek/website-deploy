@@ -23,3 +23,6 @@ terraform.rc
 Thumbs.db
 
 .env*
+
+# Per-client Terraform data dirs (infra/scripts/lib/client.sh)
+**/.terraform-*/

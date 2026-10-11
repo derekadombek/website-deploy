@@ -29,18 +29,18 @@ A visitor hits the site (e.g. `https://derekadombek.com`):
   management repo scoped to a GitHub Environment with required reviewers, so it is
   inert until a human approves — even though it stands permanently.
 - **Per-account isolation.** GitHub OIDC federates directly into each account; there
-  is no central ops account or `assume_role` chain. Each site's state, providers, and
-  trust live in its own `infra/envs/<site>` dir, so accounts never share anything.
+  is no central ops account or `assume_role` chain. Each client's state, account, and
+  trust come from its own `clients/<name>.yaml`, so accounts never share anything.
 - **Cache strategy.** Fingerprint-free static assets are sent with a long
   `immutable` cache, HTML is sent `no-cache`, and every deploy issues a CloudFront
   invalidation so updates are visible immediately without sacrificing CDN speed.
 
 ## Trade-offs / next steps
 
-- **Remote state, per account.** Each `infra/envs/<site>` keeps its own S3 +
+- **Remote state, per account.** Each client keeps its own S3 +
   DynamoDB backend in its own account — no shared state bucket. The one-time
   bootstrap creates it (see [`../infra/README.md`](../infra/README.md)).
-- **CI is fully wired.** `provision-client-aws.yml` is dispatched manually per env
+- **CI is fully wired.** `provision-client-aws.yml` is dispatched manually per client
   (validate → plan → apply) behind that env's GitHub Environment approval;
   `teardown-client-aws.yml` destroys, and `provision-client-external-domain.yml`
   handles external-registrar DNS delegation.

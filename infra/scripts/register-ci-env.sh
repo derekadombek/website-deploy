@@ -1,31 +1,26 @@
 #!/usr/bin/env bash
 #
-# Put an env under CI management: create its GitHub Environment (named the same
-# as the env dir), set the scoped AWS_TF_ROLE_ARN + AWS_REGION variables, and
-# add a required reviewer. Run once per env, after aws-grant-access has created
-# the roles — pass the terraform role ARN + region it printed.
+# Put a client under CI management: create its GitHub Environment (named the
+# same as the client), set the scoped AWS_TF_ROLE_ARN + AWS_REGION variables, and
+# add a required reviewer. The role ARN + region come from clients/<name>.yaml —
+# nothing to copy from the aws-grant-access output. Re-runnable.
 #
 # Auth: needs gh logged in with admin on this (the management) repo. No AWS
-# creds or terraform needed — the role ARN + region are passed in.
+# creds or terraform needed.
 #
 # Usage:
-#   infra/scripts/register-ci-env.sh <env-dir-name> <terraform-role-arn> <aws-region> [reviewer-login]
+#   infra/scripts/register-ci-env.sh <client> [reviewer-login]
 #     reviewer-login defaults to the authenticated gh user.
 
 set -euo pipefail
 
-ENV_NAME="${1:?usage: register-ci-env.sh <env> <terraform-role-arn> <aws-region> [reviewer]}"
-ROLE_ARN="${2:?usage: register-ci-env.sh <env> <terraform-role-arn> <aws-region> [reviewer]}"
-REGION="${3:?usage: register-ci-env.sh <env> <terraform-role-arn> <aws-region> [reviewer]}"
-REVIEWER="${4:-}"
+ENV_NAME="${1:?usage: register-ci-env.sh <client> [reviewer]}"
+REVIEWER="${2:-}"
 
-# The GitHub Environment is independent of the Terraform config, so this can run
-# any time (e.g. straight after aws-grant-access, before the env PR merges). We
-# only warn — not block — if the matching env dir doesn't exist yet, since the
-# name must eventually match it (the provisioning workflow keys off the env dir name).
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_DIR="${SCRIPT_DIR}/../envs/${ENV_NAME}"
-[ -d "${ENV_DIR}" ] || echo "warning: no env dir 'infra/envs/${ENV_NAME}' yet — make sure '${ENV_NAME}' matches the env dir name the provisioning workflow will use." >&2
+source "$(dirname "${BASH_SOURCE[0]}")/lib/client.sh"
+client_check "${ENV_NAME}"
+ROLE_ARN="$(client_tf_role_arn "${ENV_NAME}")"
+REGION="$(client_get "${ENV_NAME}" region)"
 
 REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
 

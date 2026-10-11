@@ -60,7 +60,6 @@ else
 fi
 
 echo
-echo "Backend ready. Next:"
-echo "  1. Put these names in infra/envs/<site>/versions.tf (backend) + main.tf"
-echo "     (tf_state_bucket=${BUCKET}, tf_lock_table=${TABLE}, region=${REGION})."
-echo "  2. cd infra/envs/<site> && terraform init && terraform apply"
+echo "Backend ready (${BUCKET} / ${TABLE} in ${REGION}). If these aren't the"
+echo "<name>-tf-state / <name>-tf-locks defaults, set state_bucket / lock_table in"
+echo "clients/<name>.yaml."

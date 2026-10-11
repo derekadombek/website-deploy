@@ -1,0 +1,11 @@
+# derekadombek.com — my own portfolio (Astro `portfolio` repo).
+provider: aws
+account_id: "722647055695"
+region: us-west-2
+app_repo: derekadombek/portfolio
+domain: derekadombek.com
+dns: existing-zone
+www: true
+# Predates the <name>-tf-state convention.
+state_bucket: website-deploy-tf-state-west
+lock_table: website-deploy-tf-locks
