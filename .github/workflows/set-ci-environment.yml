@@ -1,9 +1,13 @@
 name: Set CI Environment
 
-# Owner-only: put a client under CI management. Creates the GitHub Environment
-# (named the same as the client), sets its scoped AWS_TF_ROLE_ARN + AWS_REGION
-# variables (derived from clients/<name>.yaml), and adds a required reviewer.
-# Run once per client, after they've run aws-grant-access. Re-runnable.
+# Syncs GitHub Environments from clients/*.yaml — no inputs. For every AWS
+# client it creates/updates the GitHub Environment (named the same as the
+# client), sets its scoped AWS_TF_ROLE_ARN + AWS_REGION variables (derived from
+# the client file), and adds you as required reviewer. Clients with `ci: false`
+# are skipped. Idempotent: runs automatically when clients/ changes on main, and
+# you can run it by hand any time.
+#
+# It never removes an environment — delete one by hand after removing a client.
 #
 # AUTH: the default GITHUB_TOKEN CANNOT manage environments or Actions variables
 # (those need repo-admin permissions it can't be granted, even in this repo). So
@@ -13,30 +17,39 @@ name: Set CI Environment
 #     - Variables:    Read and write
 #   then add it as the repo secret REGISTER_CI_TOKEN.
 on:
-  workflow_dispatch:
-    inputs:
-      client:
-        description: Client name (clients/<name>.yaml) = GitHub Environment name.
-        required: true
+  push:
+    branches: [main]
+    paths: ["clients/**"]
+  workflow_dispatch: {}
 
 permissions:
   contents: read
 
+concurrency:
+  group: set-ci-environment
+  cancel-in-progress: false
+
 jobs:
-  register:
+  sync:
     runs-on: ubuntu-latest
     steps:
       - name: Restrict to owner
-        if: github.actor != 'derekadombek'
+        if: github.event_name == 'workflow_dispatch' && github.actor != 'derekadombek'
         run: |
           echo "Only the repo owner may run this workflow (actor: ${{ github.actor }})." >&2
           exit 1
 
       - uses: actions/checkout@v4
 
-      - name: Register CI environment
+      - name: Sync environments from clients/
         env:
           GH_TOKEN: ${{ secrets.REGISTER_CI_TOKEN }}
-          CLIENT: ${{ inputs.client }}
         run: |
-          infra/scripts/register-ci-env.sh "$CLIENT"
+          source infra/scripts/lib/client.sh
+          for c in $(client_list aws); do
+            if [ "$(client_get "$c" ci true)" = "false" ]; then
+              echo "skip $c (ci: false)"
+              continue
+            fi
+            infra/scripts/register-ci-env.sh "$c" derekadombek
+          done

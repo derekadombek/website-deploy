@@ -25,6 +25,7 @@ hosted_zone: acme.com            # [= domain] Route 53 zone the domain lives in
 www: true                        # serve www + 301 it to the apex
 error_page: /index.html          # 404 page; /error.html for multi-page sites
 app_branch: main                 # app repo branch allowed to deploy
+ci: true                         # false = validate only; no GitHub Environment
 state_bucket: acme-tf-state      # [<name>-tf-state] Terraform state, in their account
 lock_table: acme-tf-locks        # [<name>-tf-locks]
 ```
