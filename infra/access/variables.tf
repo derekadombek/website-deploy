@@ -39,3 +39,9 @@ variable "tf_lock_table" {
   description = "State lock table (created by the action)."
   type        = string
 }
+
+variable "create_oidc_provider" {
+  description = "Create the account's GitHub OIDC provider. false = reuse the one that already exists (an account can only have one). grant-access.sh decides this automatically."
+  type        = bool
+  default     = true
+}
