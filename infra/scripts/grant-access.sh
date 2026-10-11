@@ -68,4 +68,4 @@ echo "=== access granted — role ARNs ==="
 terraform output
 echo
 echo "Next: send the site owner this account id — $(aws sts get-caller-identity --query Account --output text)."
-echo "They add clients/${MGMT_ENV}.yaml with it, then run Set CI Environment + provision."
+echo "They add clients/${MGMT_ENV}.yaml with it and merge, then run Provision."

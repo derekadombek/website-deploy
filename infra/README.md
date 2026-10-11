@@ -80,15 +80,14 @@ are no ARNs to copy between steps.
    their app repo. It creates the state backend + OIDC provider + deploy and
    Terraform roles. They send you their **AWS account id**.
 2. **Add `clients/<name>.yaml`** (see [`clients/README.md`](../clients/README.md)) —
-   PR, merge.
-3. **Set CI Environment** workflow, client `<name>` — creates the GitHub
-   Environment with `AWS_TF_ROLE_ARN` (built from the account id) + `AWS_REGION`
-   + you as reviewer.
-4. **Provision** — **Provision Client's AWS Setup**, client `<name>`, approve.
+   PR, merge. Merging runs **Set CI Environment** automatically: it creates the
+   client's GitHub Environment with `AWS_TF_ROLE_ARN` (built from the account id)
+   + `AWS_REGION` + you as reviewer.
+3. **Provision** — **Provision Client's AWS Setup**, client `<name>`, approve.
    For `dns: external` use **Provision Client's External Domain for AWS** instead
    (`confirm_fresh` on the first run) — it pauses for you to paste the 4
    nameservers at the registrar.
-5. **Wire the app repo** — Variables `AWS_REGION`,
+4. **Wire the app repo** — Variables `AWS_REGION`,
    `AWS_DEPLOY_ROLE_ARN` (`arn:aws:iam::<acct>:role/<name>-github-deploy`),
    `S3_BUCKET` + `CLOUDFRONT_DISTRIBUTION_ID` (`tf.sh <name> output`), and the
    deploy workflow from the [top-level README](../README.md). Push → live.
@@ -96,7 +95,7 @@ are no ARNs to copy between steps.
 Your **own** sites follow the same flow.
 
 **Adding a domain later** — edit the client file (`domain`, `dns`), merge, and
-re-run step 4. It's an additive in-place change (CloudFront gets the alias + ACM
+re-run step 3. It's an additive in-place change (CloudFront gets the alias + ACM
 cert; content untouched).
 
 **Offboarding** is clean: the client deletes the access config (OIDC provider +
@@ -145,9 +144,11 @@ the client. Each holds:
 - **scoped variables** `AWS_TF_ROLE_ARN` + `AWS_REGION`,
 - its own **required reviewers** (the approval that mints the env-scoped OIDC token).
 
-A client is CI-managed simply by having that environment — **Set CI Environment**
-(`register-ci-env.sh <client>`) creates it. Clients without one (e.g.
-`example-client`) are validated but never planned/applied. The provision,
+**Set CI Environment** keeps them in sync with `clients/`: it runs on every merge
+that touches `clients/` (or by hand, no inputs) and creates/updates an environment
+for each client. Clients with `ci: false` (e.g. `example-client`) get none, so
+they're validated but never planned/applied. It never deletes an environment —
+remove one by hand after removing a client. The provision,
 external-domain and teardown workflows take the client name as free text and
 reject anything without a `clients/<name>.yaml`.
 

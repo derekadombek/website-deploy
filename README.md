@@ -92,8 +92,8 @@ infra/                          provisioning catalog        (→ infra/README.md
 
 1. The client runs `aws-grant-access` once in their account (their creds) and
    sends you their account id. Everything after is keyless OIDC.
-2. Add `clients/<name>.yaml`, merge, run **Set CI Environment** then **Provision
-   Client's AWS Setup** for `<name>` and approve.
+2. Add `clients/<name>.yaml` and merge (that sets up its CI environment), then
+   run **Provision Client's AWS Setup** for `<name>` and approve.
 3. Set the app repo's four `vars.*` and add the deploy workflow (snippet above).
    Push → live in under a minute.
 
