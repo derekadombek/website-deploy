@@ -1,8 +1,8 @@
 # Access stack — the trust foundation a CLIENT applies (via the aws-grant-access
 # action, with their own creds) so you can manage their account over OIDC after.
 # It creates ONLY the OIDC provider + deploy role + Terraform role. The website
-# (S3 / CloudFront / DNS) is built separately by you, over OIDC, with the site
-# env's create_iam = false.
+# (S3 / CloudFront / DNS) is built separately by you, over OIDC, by
+# infra/sites/aws from clients/<name>.yaml.
 #
 # The deploy role is scoped to the site bucket by its PREDICTABLE name
 # (<project>-site-<account>), which doesn't exist yet — that's fine, IAM resource

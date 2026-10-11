@@ -1,5 +1,5 @@
 # Bundle "recipe": the full static-site stack for one site, wiring the building
-# blocks together so an env dir only has to supply per-site values.
+# blocks together so a site root only has to supply per-site values.
 #
 #   acm_certificate (us-east-1) ─┐
 #                                ├─► static_site (S3 + CloudFront) ─► Route 53 alias
