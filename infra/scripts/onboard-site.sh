@@ -23,8 +23,8 @@
 # CONFIRM_FRESH=1 only for the first-ever provision of an env.
 #
 # Usage:
-#   AWS_PROFILE=<bootstrap> onboard-site.sh [--phase all|create-zone|finish] <env>
-#   CONFIRM_FRESH=1 onboard-site.sh --phase create-zone <env>   # first run
+#   AWS_PROFILE=<bootstrap> onboard-site.sh [--phase all|create-zone|finish] <client>
+#   CONFIRM_FRESH=1 onboard-site.sh --phase create-zone <client>   # first run
 
 set -euo pipefail
 
@@ -36,15 +36,11 @@ while [ $# -gt 0 ]; do
     *) ENV_NAME="$1"; shift;;
   esac
 done
-[ -n "${ENV_NAME}" ] || { echo "usage: onboard-site.sh [--phase all|create-zone|finish] <env>" >&2; exit 1; }
+[ -n "${ENV_NAME}" ] || { echo "usage: onboard-site.sh [--phase all|create-zone|finish] <client>" >&2; exit 1; }
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_DIR="${SCRIPT_DIR}/../envs/${ENV_NAME}"
+source "$(dirname "${BASH_SOURCE[0]}")/lib/client.sh"
 POLL_INTERVAL=30  # seconds between delegation checks
 POLL_TIMEOUT=3600 # give up after 1h of waiting on the registrar
-
-[ -d "${ENV_DIR}" ] || { echo "no such env: ${ENV_DIR}" >&2; exit 1; }
-cd "${ENV_DIR}"
 
 confirm_fresh_or_refuse() {
   # An empty state means Terraform will CREATE everything — correct on a genuine
@@ -59,8 +55,8 @@ confirm_fresh_or_refuse() {
 REFUSING TO APPLY: Terraform state for '${ENV_NAME}' is empty.
   - FIRST time provisioning this env?  Re-run with CONFIRM_FRESH=1
     (or set confirm_fresh: true on the workflow).
-  - Provisioned it before?  Your state is missing or the backend in versions.tf
-    is mis-pointed. Fix the backend first — applying now would recreate
+  - Provisioned it before?  Your state is missing or state_bucket/lock_table in
+    clients/${ENV_NAME}.yaml is mis-pointed. Fix the backend first — applying now would recreate
     resources and create a duplicate Route 53 zone.
 EOF
       exit 2
@@ -104,11 +100,12 @@ wait_for_delegation() {
 full_apply() {
   echo "==> full apply"
   terraform apply -input=false -auto-approve
-  echo "==> done. Set the repo Variables from: terraform output"
+  echo "==> done. App repo Variables: terraform output (+ AWS_DEPLOY_ROLE_ARN=$(client_deploy_role_arn "${ENV_NAME}"))"
 }
 
-echo "==> terraform init"
-terraform init -input=false >/dev/null
+echo "==> terraform init (${ENV_NAME})"
+client_tf_init "${ENV_NAME}"
+[ "$(client_get "${ENV_NAME}" provider)" = "aws" ] || { echo "onboard-site.sh only handles aws clients" >&2; exit 1; }
 
 case "${PHASE}" in
   create-zone)

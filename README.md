@@ -18,7 +18,7 @@ GitHub OIDC federated directly into each account — nothing is stored anywhere.
 | | What | Where |
 |---|---|---|
 | **Deploy** | composite action: optional build → `s3 sync` → CloudFront invalidate, keyless via OIDC | [`actions/`](actions/) |
-| **Provision** | Terraform modules + per-site env dirs that stand up the hosting + IAM | [`infra/`](infra/) |
+| **Provision** | Terraform modules + one shared root per cloud, driven by a small file per client | [`infra/`](infra/), [`clients/`](clients/) |
 
 A caller repo stays thin — it checks out and calls the action:
 
@@ -77,25 +77,25 @@ reviewers, so it's inert without a human approval). Full model + onboarding guid
 ```
 actions/                       reusable composite actions  (→ actions/README.md)
   aws-static-site/               build → s3 sync → CloudFront invalidate
+clients/                        one <name>.yaml per client  (→ clients/README.md)
 infra/                          provisioning catalog        (→ infra/README.md)
+  sites/aws/                     shared root: builds any AWS client from its file
   modules/aws/                   static_site · acm_certificate · github_oidc
                                  · static_site_stack (the bundle recipe)
-  envs/                          one dir per site: _template, portfolio,
-                                 example-client
+  access/                        trust foundation a client applies once
 .github/workflows/
-  provision-client-aws.yml       per-env plan/apply, gated by the env's approval
-  (+ teardown / new-client-env / configure-client-domain / set-ci-environment /
-   provision-client-external-domain)
+  provision-client-aws.yml       per-client plan/apply, gated by its approval
+  (+ set-ci-environment / provision-client-external-domain / teardown)
 ```
 
 ## Onboarding a site (short version)
 
-1. One-time: get privileged access to the target account, create its Terraform
-   state backend, `cp -r infra/envs/_template infra/envs/<site>`, fill it in, and
-   `terraform apply` once. Then drop the access — the account is OIDC-only after.
-2. Set the app repo's four `vars.*` from `terraform output`.
-3. Add the deploy workflow (snippet above) to the app repo. Push → live in under
-   a minute.
+1. The client runs `aws-grant-access` once in their account (their creds) and
+   sends you their account id. Everything after is keyless OIDC.
+2. Add `clients/<name>.yaml`, merge, run **Set CI Environment** then **Provision
+   Client's AWS Setup** for `<name>` and approve.
+3. Set the app repo's four `vars.*` and add the deploy workflow (snippet above).
+   Push → live in under a minute.
 
 Full walkthrough, the auth model, and "add a client": [`infra/README.md`](infra/README.md).
 Action inputs + more examples: [`actions/README.md`](actions/README.md).
@@ -106,7 +106,7 @@ Action inputs + more examples: [`actions/README.md`](actions/README.md).
 |---|---|
 | Reusable IaC modules | [`infra/modules/aws/`](infra/modules/aws/) |
 | Cross-repo composite action | [`actions/aws-static-site/`](actions/aws-static-site/) |
-| Multi-account / multi-domain isolation | [`infra/envs/`](infra/envs/) — per-env state, providers, trust |
+| Multi-account / multi-domain isolation | [`clients/`](clients/) + [`infra/sites/aws/`](infra/sites/aws/) — per-client state, account guard, trust |
 | Private origin (no public bucket) | `static_site` + CloudFront Origin Access Control |
 | Automated TLS | `acm_certificate` — DNS-validated, auto-renewing |
 | Keyless cloud auth + human-gated provisioning | `github_oidc` — two trust targets, env-gated Terraform role |

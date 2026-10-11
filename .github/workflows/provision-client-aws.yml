@@ -1,30 +1,23 @@
 name: Provision Client's AWS Setup
 
-# Provision/manage sites in infra/envs/*. Manual only: you dispatch it and pick
-# the env (or "all"), so you always explicitly choose what runs — no surprise
-# plan/apply on every push/merge. A dispatch does validate → plan → (approve) →
-# apply, so the plan is visible in the run and the environment approval is the
-# control point before anything is applied.
+# Provision/manage AWS clients (clients/<name>.yaml with provider: aws). Manual
+# only: you dispatch it and name the client (or "all"), so you always explicitly
+# choose what runs. A dispatch does validate → plan → (approve) → apply, so the
+# plan is visible in the run and the environment approval is the control point
+# before anything is applied.
 #
-# An env is CI-managed iff a GitHub Environment with its name exists. That
-# environment holds the client's AWS_TF_ROLE_ARN + AWS_REGION (scoped variables)
-# and its own required reviewers — the approval is what mints the env-scoped
-# OIDC token the env's Terraform role trusts. Validate-only envs (no environment)
-# are still checked, just never planned/applied.
+# A client is CI-managed iff a GitHub Environment with its name exists (Set CI
+# Environment creates it). That environment holds the client's AWS_TF_ROLE_ARN +
+# AWS_REGION (scoped variables) and its own required reviewers — the approval is
+# what mints the env-scoped OIDC token the client's Terraform role trusts.
+# Validate-only clients (no environment) are still checked, just never applied.
 on:
   workflow_dispatch:
     inputs:
-      env:
-        description: Env to run.
-        type: choice
+      client:
+        description: Client name (clients/<name>.yaml), or "all".
+        required: true
         default: all
-        # Static list — workflow_dispatch dropdowns can't auto-detect infra/envs.
-        # Add a line here when you onboard a new site.
-        options:
-          - all
-          - boisevalleydetailing
-          - example-client
-          - portfolio
 
 permissions:
   id-token: write # OIDC token to assume the AWS role
@@ -49,15 +42,16 @@ jobs:
       - name: Compute target envs
         id: scope
         env:
-          SELECTION: ${{ github.event.inputs.env }}
+          SELECTION: ${{ inputs.client }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
 
-          # All envs that exist (for validate), minus the template.
-          all_envs=$(ls -1 infra/envs | grep -vx '_template' || true)
+          # All AWS clients (for validate).
+          source infra/scripts/lib/client.sh
+          all_envs=$(client_list aws)
 
-          # CI-managed envs = those with a matching GitHub Environment (which
+          # CI-managed clients = those with a matching GitHub Environment (which
           # holds their AWS_TF_ROLE_ARN/AWS_REGION + reviewers). That's the
           # opt-in: create the environment to put a client under CI management.
           ci_envs=$(gh api "repos/${GITHUB_REPOSITORY}/environments" --paginate --jq '.environments[].name' 2>/dev/null || true)
@@ -68,7 +62,7 @@ jobs:
           elif echo "$all_envs" | grep -qx "$SELECTION"; then
             scope="$SELECTION"
           else
-            echo "::error::No such env '$SELECTION'. Options: all, $(echo $all_envs | tr '\n' ' ')"
+            echo "::error::No AWS client '$SELECTION' (clients/$SELECTION.yaml). Options: all, $(echo $all_envs | tr '\n' ' ')"
             exit 1
           fi
 
@@ -93,7 +87,7 @@ jobs:
           echo "validate: $validate"
           echo "apply: $apply"
 
-  # Credential-free checks for the in-scope envs.
+  # Credential-free checks for the in-scope clients.
   validate:
     needs: setup
     if: needs.setup.outputs.has_validate == 'true'
@@ -106,14 +100,13 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
       - name: Format check
         run: terraform fmt -check -recursive
-      - name: Init (no backend)
-        working-directory: infra/envs/${{ matrix.env }}
-        run: terraform init -backend=false -input=false
-      - name: Validate
-        working-directory: infra/envs/${{ matrix.env }}
-        run: terraform validate
+      - name: Check client file + validate
+        run: |
+          source infra/scripts/lib/client.sh
+          client_tf_init "${{ matrix.env }}" -backend=false
+          terraform validate
 
-  # Plan for the in-scope CI-managed envs. Each runs in its own GitHub
+  # Plan for the in-scope CI-managed clients. Each runs in its own GitHub
   # Environment, whose approval mints the env-scoped OIDC token, and whose scoped
   # variables supply the role + region.
   plan:
@@ -124,9 +117,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.setup.outputs.apply_matrix) }}
-    defaults:
-      run:
-        working-directory: infra/envs/${{ matrix.env }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -135,10 +125,8 @@ jobs:
         with:
           role-to-assume: ${{ vars.AWS_TF_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-      - name: Init
-        run: terraform init -input=false
       - name: Plan
-        run: terraform plan -no-color -input=false
+        run: infra/scripts/tf.sh "${{ matrix.env }}" plan -no-color -input=false
 
   # Apply after the plan + approval.
   apply:
@@ -150,9 +138,6 @@ jobs:
       fail-fast: false
       max-parallel: 1
       matrix: ${{ fromJSON(needs.setup.outputs.apply_matrix) }}
-    defaults:
-      run:
-        working-directory: infra/envs/${{ matrix.env }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -161,7 +146,5 @@ jobs:
         with:
           role-to-assume: ${{ vars.AWS_TF_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-      - name: Init
-        run: terraform init -input=false
       - name: Apply
-        run: terraform apply -auto-approve -input=false
+        run: infra/scripts/tf.sh "${{ matrix.env }}" apply -auto-approve -input=false

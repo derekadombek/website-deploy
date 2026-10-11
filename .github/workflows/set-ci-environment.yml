@@ -1,9 +1,9 @@
 name: Set CI Environment
 
-# Owner-only: put a site env under CI management. Creates the GitHub Environment
-# (named the same as the env dir), sets its scoped AWS_TF_ROLE_ARN + AWS_REGION
-# variables, and adds a required reviewer. Run once per env, after aws-grant-access
-# has created the roles — paste the terraform role ARN + region it printed.
+# Owner-only: put a client under CI management. Creates the GitHub Environment
+# (named the same as the client), sets its scoped AWS_TF_ROLE_ARN + AWS_REGION
+# variables (derived from clients/<name>.yaml), and adds a required reviewer.
+# Run once per client, after they've run aws-grant-access. Re-runnable.
 #
 # AUTH: the default GITHUB_TOKEN CANNOT manage environments or Actions variables
 # (those need repo-admin permissions it can't be granted, even in this repo). So
@@ -15,16 +15,9 @@ name: Set CI Environment
 on:
   workflow_dispatch:
     inputs:
-      env:
-        description: Env dir name = GitHub Environment name (e.g. boisevalleydetailing).
+      client:
+        description: Client name (clients/<name>.yaml) = GitHub Environment name.
         required: true
-      terraform_role_arn:
-        description: Terraform/management role ARN (from the aws-grant-access output).
-        required: true
-      aws_region:
-        description: AWS region.
-        required: false
-        default: us-west-2
 
 permissions:
   contents: read
@@ -44,8 +37,6 @@ jobs:
       - name: Register CI environment
         env:
           GH_TOKEN: ${{ secrets.REGISTER_CI_TOKEN }}
+          CLIENT: ${{ inputs.client }}
         run: |
-          infra/scripts/register-ci-env.sh \
-            "${{ inputs.env }}" \
-            "${{ inputs.terraform_role_arn }}" \
-            "${{ inputs.aws_region }}"
+          infra/scripts/register-ci-env.sh "$CLIENT"

@@ -67,5 +67,5 @@ echo
 echo "=== access granted — role ARNs ==="
 terraform output
 echo
-echo "Next (you): create the site env (mgmt_environment=${MGMT_ENV}, create_iam=false),"
-echo "register its GitHub Environment with the terraform_role_arn above, then provision."
+echo "Next: send the site owner this account id — $(aws sts get-caller-identity --query Account --output text)."
+echo "They add clients/${MGMT_ENV}.yaml with it, then run Set CI Environment + provision."

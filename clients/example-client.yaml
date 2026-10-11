@@ -1,0 +1,11 @@
+# VALIDATE-ONLY example: a client in their own AWS account whose domain is
+# registered elsewhere (GoDaddy, Namecheap, …). No GitHub Environment exists for
+# it, so CI checks it but never plans/applies it.
+provider: aws
+account_id: "111111111111"
+region: us-east-1
+app_repo: example-client/website
+domain: www.example-client.com
+hosted_zone: example-client.com
+dns: external
+www: false
