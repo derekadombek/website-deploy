@@ -13,7 +13,8 @@
 # Usage:
 #   grant-access.sh --project <p> --region <r> --deploy-repo <o/r> \
 #     --mgmt-environment <env> --state-bucket <b> --lock-table <t> \
-#     [--mgmt-repo <o/r>] [--branch <b>] [--delegation-zone <zone>]
+#     [--mgmt-repo <o/r>] [--branch <b>] [--delegation-zone <zone>] \
+#     [--deploy-repo-ids <ownerId>/<repoId>]
 #
 #   --delegation-zone  also create <project>-dns-delegation, letting other clients
 #                      delegate subdomains of this account's <zone> to themselves.
@@ -21,7 +22,7 @@
 set -euo pipefail
 
 PROJECT="" REGION="" DEPLOY_REPO="" MGMT_ENV="" STATE_BUCKET="" LOCK_TABLE=""
-MGMT_REPO="" BRANCH="" DELEGATION_ZONE=""
+MGMT_REPO="" BRANCH="" DELEGATION_ZONE="" DEPLOY_REPO_IDS=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -34,6 +35,7 @@ while [ $# -gt 0 ]; do
     --mgmt-repo) MGMT_REPO="$2"; shift 2;;
     --branch) BRANCH="$2"; shift 2;;
     --delegation-zone) DELEGATION_ZONE="$2"; shift 2;;
+    --deploy-repo-ids) DEPLOY_REPO_IDS="$2"; shift 2;;
     *) echo "unknown option: $1" >&2; exit 1;;
   esac
 done
@@ -79,6 +81,8 @@ terraform apply -auto-approve -input=false \
   -var="aws_region=${REGION}" \
   -var="project_name=${PROJECT}" \
   -var="deploy_github_repo=${DEPLOY_REPO}" \
+  ${DEPLOY_REPO_IDS:+-var="deploy_github_repo_owner_id=${DEPLOY_REPO_IDS%%/*}"} \
+  ${DEPLOY_REPO_IDS:+-var="deploy_github_repo_id=${DEPLOY_REPO_IDS##*/}"} \
   -var="mgmt_environment=${MGMT_ENV}" \
   -var="tf_state_bucket=${STATE_BUCKET}" \
   -var="tf_lock_table=${LOCK_TABLE}" \

@@ -65,6 +65,10 @@ runs:
 
     - name: Grant access
       shell: bash
+      env:
+        # When the app repo is the one running this (the usual case), also trust
+        # its immutable GitHub subject — newer repos sign in with owner@id/name@id.
+        DEPLOY_REPO_IDS: ${{ inputs.deploy-github-repo == github.repository && format('{0}/{1}', github.repository_owner_id, github.repository_id) || '' }}
       run: |
         "${{ github.action_path }}/../../infra/scripts/grant-access.sh" \
           --project "${{ inputs.project-name }}" \
@@ -74,4 +78,5 @@ runs:
           --state-bucket "${{ inputs.state-bucket }}" \
           --lock-table "${{ inputs.lock-table }}" \
           --mgmt-repo "${{ inputs.mgmt-github-repo }}" \
-          --branch "${{ inputs.github-branch }}"
+          --branch "${{ inputs.github-branch }}" \
+          ${DEPLOY_REPO_IDS:+--deploy-repo-ids "$DEPLOY_REPO_IDS"}

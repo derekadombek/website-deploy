@@ -111,6 +111,11 @@ handed to you; from then on it's keyless.
 | `github-branch` | no | `main` | App repo deploy branch. |
 | `role-arn` | no | `""` | Admin role to assume via OIDC; empty = creds from a prior step. |
 
+**Repo identity:** GitHub signs newer repos in with an *immutable* identity
+(`owner@<id>/name@<id>`) instead of `owner/name`. When `deploy-github-repo` is
+the repo running the action (the usual case), the deploy role is set to accept
+both, automatically. Locally, pass `grant-access.sh --deploy-repo-ids <ownerId>/<repoId>`.
+
 **Auth:** runs *before* OIDC exists (it creates it), so supply privileged creds —
 a prior `configure-aws-credentials` step (short-lived SSO/temp creds) or, if an
 admin role already exists, `role-arn` (needs `permissions: id-token: write`).
