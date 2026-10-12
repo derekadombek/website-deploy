@@ -1,0 +1,68 @@
+name: Unlock Client State
+
+# Owner-only: remove a STALE Terraform state lock for one client — the kind a
+# cancelled or crashed Provision/Teardown run leaves behind ("Error acquiring the
+# state lock … Lock Info: ID: …"). Runs on the client's own Terraform role, so no
+# credentials on your laptop.
+#
+# Only use it when NO run for that client is still going — unlocking under a live
+# apply lets two runs write the same state.
+on:
+  workflow_dispatch:
+    inputs:
+      client:
+        description: Client name (clients/<name>.yaml).
+        required: true
+      lock_id:
+        description: Lock ID from the error ("Lock Info → ID").
+        required: true
+
+permissions:
+  id-token: write # OIDC token to assume the AWS role
+  contents: read
+
+env:
+  TERRAFORM_VERSION: "1.16.5" # keep in sync with .terraform-version
+
+concurrency:
+  group: terraform-${{ github.ref }} # shared with provision/teardown: never unlock mid-run
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restrict to owner
+        if: github.actor != 'derekadombek'
+        run: |
+          echo "Only the repo owner may run this workflow (actor: ${{ github.actor }})." >&2
+          exit 1
+      - uses: actions/checkout@v4
+      - name: Check client file + lock id
+        env:
+          CLIENT: ${{ inputs.client }}
+          LOCK_ID: ${{ inputs.lock_id }}
+        run: |
+          source infra/scripts/lib/client.sh && client_check "$CLIENT"
+          echo "$LOCK_ID" | grep -qE '^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$' ||
+            { echo "::error::lock_id should look like 77118d68-29e5-eb2c-532b-c9341a1c0027"; exit 1; }
+
+  unlock:
+    needs: check
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.client }} # approval gate + scoped AWS_TF_ROLE_ARN/AWS_REGION
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TF_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Force-unlock
+        env:
+          CLIENT: ${{ inputs.client }}
+          LOCK_ID: ${{ inputs.lock_id }}
+        run: infra/scripts/tf.sh "$CLIENT" force-unlock -force "$LOCK_ID"
