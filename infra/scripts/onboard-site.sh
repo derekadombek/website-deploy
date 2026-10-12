@@ -149,7 +149,10 @@ wait_for_delegation() {
 full_apply() {
   echo "==> full apply"
   terraform apply -input=false -auto-approve
-  echo "==> done. App repo Variables: terraform output (+ AWS_DEPLOY_ROLE_ARN=$(client_deploy_role_arn "${ENV_NAME}"))"
+  echo "==> done. App repo deploy.yml (templates/client-repo/deploy.yml):"
+  echo "      client-name: ${ENV_NAME}"
+  echo "      aws-account-id: \"$(client_get "${ENV_NAME}" account_id)\""
+  echo "      aws-region: $(client_get "${ENV_NAME}" region)"
 }
 
 echo "==> terraform init (${ENV_NAME})"

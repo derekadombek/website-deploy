@@ -1,32 +1,46 @@
 name: AWS static site deploy
 description: >-
   Optionally build a static site, then sync it to S3 and invalidate CloudFront,
-  authenticating to AWS keylessly via GitHub OIDC. Account-agnostic: the role,
-  bucket, and distribution are passed in, so the same action deploys any site in
-  any account.
+  authenticating to AWS keylessly via GitHub OIDC. Give it the client name +
+  AWS account id and it works out the role, bucket and distribution itself — no
+  repo Variables needed.
 
 # Caller requirements:
 #   permissions:
 #     id-token: write   # mint the OIDC token configure-aws-credentials exchanges
 #     contents: read
-# The role passed as `role-arn` must trust the calling repo's OIDC subject and
-# grant s3:PutObject/DeleteObject/ListBucket on the bucket plus
-# cloudfront:CreateInvalidation on the distribution (the deploy role this repo's
-# Terraform provisions).
+#
+# Two ways to call it:
+#   client-name + aws-account-id   (preferred) — derives <name>-github-deploy,
+#       <name>-site-<account>, and looks up the distribution serving that bucket.
+#   role-arn + s3-bucket + cloudfront-distribution-id   (older repos) — explicit.
+# Either way the deploy role (from aws-grant-access) must trust the calling repo.
 
 inputs:
+  client-name:
+    description: Client name (clients/<name>.yaml in website-deploy). Use with aws-account-id.
+    required: false
+    default: ""
+  aws-account-id:
+    description: The client's 12-digit AWS account id. Use with client-name.
+    required: false
+    default: ""
   aws-region:
     description: AWS region of the S3 bucket.
-    required: true
+    required: false
+    default: us-west-2
   role-arn:
-    description: ARN of the deploy role to assume via OIDC.
-    required: true
+    description: (older repos) ARN of the deploy role to assume via OIDC.
+    required: false
+    default: ""
   s3-bucket:
-    description: Name of the destination S3 bucket.
-    required: true
+    description: (older repos) Name of the destination S3 bucket.
+    required: false
+    default: ""
   cloudfront-distribution-id:
-    description: CloudFront distribution ID to invalidate after sync.
-    required: true
+    description: (older repos) CloudFront distribution ID to invalidate after sync.
+    required: false
+    default: ""
   source-dir:
     description: Directory whose contents are synced to the bucket (e.g. site, dist).
     required: true
@@ -69,11 +83,55 @@ runs:
       working-directory: ${{ inputs.working-directory }}
       run: ${{ inputs.build-command }}
 
+    - name: Resolve deploy target
+      id: target
+      shell: bash
+      env:
+        NAME: ${{ inputs.client-name }}
+        ACCOUNT: ${{ inputs.aws-account-id }}
+        ROLE: ${{ inputs.role-arn }}
+        BUCKET: ${{ inputs.s3-bucket }}
+        DIST: ${{ inputs.cloudfront-distribution-id }}
+      run: |
+        if [ -n "$NAME" ]; then
+          echo "$ACCOUNT" | grep -qE '^[0-9]{12}$' || { echo "::error::aws-account-id must be the 12-digit account id (quote it in YAML)"; exit 1; }
+          ROLE="arn:aws:iam::${ACCOUNT}:role/${NAME}-github-deploy"
+          BUCKET="${NAME}-site-${ACCOUNT}"
+        elif [ -z "$ROLE" ] || [ -z "$BUCKET" ] || [ -z "$DIST" ]; then
+          echo "::error::Pass client-name + aws-account-id (or, for older repos, role-arn + s3-bucket + cloudfront-distribution-id)."
+          exit 1
+        fi
+        {
+          echo "role=$ROLE"
+          echo "bucket=$BUCKET"
+          echo "dist=$DIST"
+        } >> "$GITHUB_OUTPUT"
+
     - name: Configure AWS credentials (OIDC)
       uses: aws-actions/configure-aws-credentials@v4
       with:
-        role-to-assume: ${{ inputs.role-arn }}
+        role-to-assume: ${{ steps.target.outputs.role }}
         aws-region: ${{ inputs.aws-region }}
+
+    - name: Find the CloudFront distribution
+      id: dist
+      shell: bash
+      env:
+        BUCKET: ${{ steps.target.outputs.bucket }}
+        DIST: ${{ steps.target.outputs.dist }}
+      run: |
+        if [ -z "$DIST" ]; then
+          # The one distribution whose origin is this site's bucket.
+          DIST="$(aws cloudfront list-distributions \
+            --query "DistributionList.Items[?Origins.Items[?starts_with(DomainName, '${BUCKET}.s3.')]].Id" \
+            --output text | tr -s '[:space:]' ' ' | sed 's/^ *//; s/ *$//')"
+          case "$DIST" in
+            "" | None) echo "::error::No CloudFront distribution serves ${BUCKET} — has this client been provisioned?"; exit 1 ;;
+            *" "*) echo "::error::More than one distribution serves ${BUCKET}: ${DIST}"; exit 1 ;;
+          esac
+        fi
+        echo "Deploying to s3://${BUCKET} via CloudFront ${DIST}"
+        echo "id=$DIST" >> "$GITHUB_OUTPUT"
 
     - name: Sync to S3
       shell: bash
@@ -81,12 +139,12 @@ runs:
       run: |
         # Long-cache the fingerprinted assets, but never cache the HTML so
         # updates show up immediately (CloudFront invalidation handles the rest).
-        aws s3 sync "${{ inputs.source-dir }}" "s3://${{ inputs.s3-bucket }}" \
+        aws s3 sync "${{ inputs.source-dir }}" "s3://${{ steps.target.outputs.bucket }}" \
           --delete \
           --exclude "*.html" \
           --cache-control "public,max-age=31536000,immutable"
 
-        aws s3 sync "${{ inputs.source-dir }}" "s3://${{ inputs.s3-bucket }}" \
+        aws s3 sync "${{ inputs.source-dir }}" "s3://${{ steps.target.outputs.bucket }}" \
           --delete \
           --exclude "*" --include "*.html" \
           --cache-control "no-cache"
@@ -95,5 +153,5 @@ runs:
       shell: bash
       run: |
         aws cloudfront create-invalidation \
-          --distribution-id "${{ inputs.cloudfront-distribution-id }}" \
+          --distribution-id "${{ steps.dist.outputs.id }}" \
           --paths "/*"

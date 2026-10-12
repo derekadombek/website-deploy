@@ -68,6 +68,14 @@ data "aws_iam_policy_document" "permissions" {
     actions   = ["cloudfront:CreateInvalidation"]
     resources = [var.distribution_arn]
   }
+
+  # Lets the deploy action find its own distribution (by the bucket it serves),
+  # so app repos don't need the distribution id configured. Read-only metadata.
+  statement {
+    sid       = "FindDistribution"
+    actions   = ["cloudfront:ListDistributions"]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "deploy" {

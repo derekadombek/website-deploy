@@ -31,16 +31,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: derekadombek/website-deploy/actions/aws-static-site@v1
         with:
-          aws-region: ${{ vars.AWS_REGION }}
-          role-arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          s3-bucket: ${{ vars.S3_BUCKET }}
-          cloudfront-distribution-id: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+          client-name: acme             # = clients/acme.yaml
+          aws-account-id: "123456789012"
           install-command: npm ci      # omit for a no-build site
           build-command: npm run build  # omit for a no-build site
           source-dir: dist
 ```
 
-The four `vars.*` come from `terraform output` after provisioning the site.
+The action works out the deploy role, bucket and CloudFront distribution from the
+client name + account id — no repo Variables. Full template:
+[`templates/client-repo/deploy.yml`](templates/client-repo/deploy.yml).
 
 ## How it deploys (no stored keys)
 
@@ -94,7 +94,7 @@ infra/                          provisioning catalog        (→ infra/README.md
    sends you their account id. Everything after is keyless OIDC.
 2. Add `clients/<name>.yaml` and merge (that sets up its CI environment), then
    run **Provision Client's AWS Setup** (it plans every client) and approve.
-3. Set the app repo's four `vars.*` and add the deploy workflow (snippet above).
+3. Add the deploy workflow (snippet above) with their name + account id.
    Push → live in under a minute.
 
 Full walkthrough, the auth model, and "add a client": [`infra/README.md`](infra/README.md).
