@@ -29,7 +29,7 @@ env:
   TERRAFORM_VERSION: "1.16.5"
 
 concurrency:
-  group: terraform-${{ github.ref }} # shared with provision-client-aws.yml so apply/destroy never race on state
+  group: terraform # shared with Provision + Unlock (all branches): never two Terraform runs at once
   cancel-in-progress: false
 
 jobs:

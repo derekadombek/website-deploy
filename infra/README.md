@@ -77,15 +77,19 @@ are no ARNs to copy between steps.
 1. **Client grants access (once, their account)** — they run `aws-grant-access`
    with their own admin creds, `project-name` + `mgmt-environment` = the client
    name, `state-bucket` `<name>-tf-state`, `lock-table` `<name>-tf-locks`, and
-   their app repo. It creates the state backend + OIDC provider + deploy and
-   Terraform roles. They send you their **AWS account id**.
+   their app repo. It creates the state backend + OIDC provider + deploy,
+   Terraform and read-only plan roles. They send you their **AWS account id**.
 2. **Add `clients/<name>.yaml`** (see [`clients/README.md`](../clients/README.md)) —
    PR, merge. Merging runs **Set CI Environment** automatically: it creates the
    client's GitHub Environment with `AWS_TF_ROLE_ARN` (built from the account id)
    + `AWS_REGION` + you as reviewer.
-3. **Provision** — **Provision Client's AWS Setup**, client `<name>`, approve. It handles every DNS case from
-   the client file — see *DNS* below. For an outside registrar it prints 4
-   nameservers in the run summary and waits while you paste them.
+3. **Provision** — run **Provision Client's AWS Setup** from `main` (no inputs).
+   It plans **every** client without asking (read-only), then waits for one
+   approval covering every client whose plan has changes — read the plans in
+   the run summary, then in *Review deployments* tick them all and approve. It
+   handles every DNS case from the client file — see *DNS* below. For an outside
+   registrar it prints 4 nameservers in the run summary and waits while you
+   paste them.
 4. **Wire the app repo** — Variables `AWS_REGION`,
    `AWS_DEPLOY_ROLE_ARN` (`arn:aws:iam::<acct>:role/<name>-github-deploy`),
    `S3_BUCKET` + `CLOUDFRONT_DISTRIBUTION_ID` (`tf.sh <name> output`), and the
@@ -165,13 +169,22 @@ the client. Each holds:
 - **scoped variables** `AWS_TF_ROLE_ARN` + `AWS_REGION`,
 - its own **required reviewers** (the approval that mints the env-scoped OIDC token).
 
+Three roles per client account, three trust targets — never collapse them:
+
+| Role | Trusts | Can |
+|---|---|---|
+| `<name>-github-deploy` | the client's app repo, `main` | sync the site + invalidate |
+| `<name>-plan` | this repo, `main` (no approval) | **read** the site + state, take the lock |
+| `<name>-terraform` | this repo, environment `<name>` (approval) | change the site |
+
 **Set CI Environment** keeps them in sync with `clients/`: it runs on every merge
 that touches `clients/` (or by hand, no inputs) and creates/updates an environment
 for each client. Clients with `ci: false` (e.g. `example-client`) get none, so
 they're validated but never planned/applied. It never deletes an environment —
-remove one by hand after removing a client. The provision
-and teardown workflows take the client name as free text (no default) and
-reject anything without a `clients/<name>.yaml`.
+remove one by hand after removing a client. Provision always covers every
+client; Teardown and Unlock take one client name and reject anything without a
+`clients/<name>.yaml`. All three share one concurrency group, so only one
+Terraform run happens at a time, across all branches.
 
 ## Terraform version
 

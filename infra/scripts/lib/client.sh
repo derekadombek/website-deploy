@@ -108,3 +108,4 @@ client_delegation_role_arn() {
   [ -n "${parent}" ] || return 0
   echo "arn:aws:iam::$(client_get "${parent}" account_id):role/${parent}-dns-delegation"
 }
+client_plan_role_arn() { echo "arn:aws:iam::$(client_get "$1" account_id):role/$1-plan"; }

@@ -1,0 +1,73 @@
+# Plan role — READ-ONLY, so `terraform plan` can run without an approval.
+#
+# Trusts the management repo's main branch (no GitHub Environment), so the
+# Provision workflow's plan job gets it automatically. It can read the site's
+# resources and its state, take the state lock, and change nothing — the apply
+# still needs the Terraform role, which only an approved environment job gets.
+data "aws_iam_policy_document" "plan_assume" {
+  statement {
+    actions = ["sts:AssumeRoleWithWebIdentity"]
+    effect  = "Allow"
+
+    principals {
+      type        = "Federated"
+      identifiers = [local.oidc_provider_arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:aud"
+      values   = ["sts.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "token.actions.githubusercontent.com:sub"
+      values   = ["repo:${var.mgmt_github_repo}:ref:refs/heads/main"]
+    }
+  }
+}
+
+resource "aws_iam_role" "plan" {
+  name               = "${var.name_prefix}-plan"
+  assume_role_policy = data.aws_iam_policy_document.plan_assume.json
+}
+
+data "aws_iam_policy_document" "plan" {
+  statement {
+    sid       = "ReadState"
+    actions   = ["s3:GetObject", "s3:ListBucket"]
+    resources = ["arn:aws:s3:::${var.tf_state_bucket}", "arn:aws:s3:::${var.tf_state_bucket}/*"]
+  }
+
+  # plan takes the state lock so it never reads a half-written state.
+  statement {
+    sid       = "StateLock"
+    actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
+    resources = ["arn:aws:dynamodb:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:table/${var.tf_lock_table}"]
+  }
+
+  # Read the site bucket's configuration (plan refreshes every setting).
+  statement {
+    sid       = "ReadSiteBucket"
+    actions   = ["s3:GetBucket*", "s3:GetEncryptionConfiguration", "s3:GetLifecycleConfiguration", "s3:GetReplicationConfiguration", "s3:GetAccelerateConfiguration", "s3:ListBucket"]
+    resources = [var.bucket_arn]
+  }
+
+  statement {
+    sid = "ReadSiteServices"
+    actions = [
+      "cloudfront:Get*", "cloudfront:List*", "cloudfront:Describe*",
+      "acm:Describe*", "acm:List*", "acm:GetCertificate",
+      "route53:Get*", "route53:List*",
+      "route53domains:Get*", "route53domains:List*",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_role_policy" "plan" {
+  name   = "${var.name_prefix}-plan"
+  role   = aws_iam_role.plan.id
+  policy = data.aws_iam_policy_document.plan.json
+}

@@ -12,3 +12,8 @@ output "dns_delegation_role_arn" {
   description = "ARN of the DNS-delegation role (empty unless delegation_zone_name is set)."
   value       = var.delegation_zone_name != "" ? aws_iam_role.dns_delegation[0].arn : ""
 }
+
+output "plan_role_arn" {
+  description = "ARN of the read-only plan role (derived by the Provision workflow from the client file)."
+  value       = module.github_oidc.plan_role_arn
+}
