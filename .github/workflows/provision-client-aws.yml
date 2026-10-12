@@ -1,16 +1,18 @@
 name: Provision Client's AWS Setup
 
-# Provision/manage AWS clients (clients/<name>.yaml with provider: aws). Manual
-# only: you dispatch it and name the client (or "all"), so you always explicitly
-# choose what runs. A dispatch does validate → plan → (approve) → apply, so the
-# plan is visible in the run and the environment approval is the control point
-# before anything is applied.
+# Brings EVERY client's AWS setup in line with its client file. No inputs:
+#
+#   validate → plan (every client, read-only, no approval)
+#            → apply (only clients whose plan shows changes — ONE approval)
+#
+# The plan runs on each client's read-only <name>-plan role, which trusts this
+# repo's main branch — so run it from main. The apply runs on each client's
+# Terraform role, which only an approved job in that client's GitHub Environment
+# can get. All applies wait together: in the "Review deployments" dialog, tick
+# every client and approve once. Read the plans in the run summary first.
 #
 # A client is CI-managed iff a GitHub Environment with its name exists (Set CI
-# Environment creates it). That environment holds the client's AWS_TF_ROLE_ARN +
-# AWS_REGION (scoped variables) and its own required reviewers — the approval is
-# what mints the env-scoped OIDC token the client's Terraform role trusts.
-# Validate-only clients (no environment) are still checked, just never applied.
+# Environment creates it). Validate-only clients (ci: false) are only checked.
 #
 # DNS is handled from the client file — one workflow for every case:
 #   - no domain / existing zone / route53-registrar → straight apply.
@@ -21,14 +23,10 @@ name: Provision Client's AWS Setup
 #     the 4 nameservers in the run summary, and WAITS (up to 1h) while you paste
 #     them at the registrar; then applies. No second approval needed.
 on:
-  workflow_dispatch:
-    inputs:
-      client:
-        description: Client name (clients/<name>.yaml), or "all".
-        required: true
+  workflow_dispatch: {}
 
 permissions:
-  id-token: write # OIDC token to assume the AWS role
+  id-token: write # OIDC token to assume the AWS roles
   contents: read
 
 # One Terraform version everywhere — keep in sync with .terraform-version (the
@@ -37,78 +35,53 @@ permissions:
 env:
   TERRAFORM_VERSION: "1.16.5"
 
+# One Terraform run at a time across ALL branches (shared with Teardown and
+# Unlock), so two runs can never hold the same client's state.
 concurrency:
-  group: terraform-${{ github.ref }}
+  group: terraform
   cancel-in-progress: false
 
 jobs:
-  # Decide which envs are in scope and emit the matrices.
   setup:
     runs-on: ubuntu-latest
     outputs:
-      validate_matrix: ${{ steps.scope.outputs.validate_matrix }}
-      apply_matrix: ${{ steps.scope.outputs.apply_matrix }}
-      has_validate: ${{ steps.scope.outputs.has_validate }}
-      has_apply: ${{ steps.scope.outputs.has_apply }}
+      all_matrix: ${{ steps.scope.outputs.all_matrix }}
+      ci_matrix: ${{ steps.scope.outputs.ci_matrix }}
+      has_ci: ${{ steps.scope.outputs.has_ci }}
     steps:
+      - name: Run from main
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Run Provision from main — the read-only plan roles only trust main."
+          exit 1
       - uses: actions/checkout@v4
-
-      - name: Compute target envs
+      - name: List clients
         id: scope
         env:
-          SELECTION: ${{ inputs.client }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
-          # All AWS clients (for validate).
           source infra/scripts/lib/client.sh
-          all_envs=$(client_list aws)
+          all=$(client_list aws)
+          # CI-managed = has a GitHub Environment of the same name.
+          envs=$(gh api "repos/${GITHUB_REPOSITORY}/environments" --paginate --jq '.environments[].name')
+          ci=$(for c in $all; do echo "$envs" | grep -qx "$c" && echo "$c" || true; done)
 
-          # CI-managed clients = those with a matching GitHub Environment (which
-          # holds their AWS_TF_ROLE_ARN/AWS_REGION + reviewers). That's the
-          # opt-in: create the environment to put a client under CI management.
-          ci_envs=$(gh api "repos/${GITHUB_REPOSITORY}/environments" --paginate --jq '.environments[].name' 2>/dev/null || true)
-
-          # In-scope env(s) from the dispatch input (one env, or "all").
-          if [ -z "$SELECTION" ] || [ "$SELECTION" = "all" ]; then
-            scope="$all_envs"
-          elif echo "$all_envs" | grep -qx "$SELECTION"; then
-            scope="$SELECTION"
-          else
-            echo "::error::No AWS client '$SELECTION' (clients/$SELECTION.yaml). Options: all, $(echo $all_envs | tr '\n' ' ')"
-            exit 1
-          fi
-
-          j() { printf '%s\n' $1 | jq -R . | jq -cs 'map(select(length>0))'; }
-          all_json=$(j "$all_envs"); scope_json=$(j "$scope"); ci_json=$(j "$ci_envs")
-
-          # validate: every in-scope env. apply: in-scope envs that are CI-managed.
-          validate=$(jq -cn --argjson a "$all_json" --argjson s "$scope_json" \
-            '[ $a[] | select(. as $e | $s|index($e)) | {env: .} ]')
-          apply=$(jq -cn --argjson a "$all_json" --argjson s "$scope_json" --argjson c "$ci_json" \
-            '[ $a[] | select(. as $e | ($s|index($e)) and ($c|index($e))) | {env: .} ]')
-
+          m() { printf '%s\n' $1 | jq -R . | jq -cs '{include: map(select(length>0) | {env: .})}'; }
           {
-            echo "validate_matrix={\"include\":$validate}"
-            echo "apply_matrix={\"include\":$apply}"
-            echo "has_validate=$([ "$(echo "$validate" | jq 'length')" -gt 0 ] && echo true || echo false)"
-            echo "has_apply=$([ "$(echo "$apply" | jq 'length')" -gt 0 ] && echo true || echo false)"
+            echo "all_matrix=$(m "$all")"
+            echo "ci_matrix=$(m "$ci")"
+            echo "has_ci=$([ -n "$ci" ] && echo true || echo false)"
           } >> "$GITHUB_OUTPUT"
+          echo "clients: $(echo $all)"; echo "CI-managed: $(echo $ci)"
 
-          echo "scope: $(echo $scope | tr '\n' ' ')"
-          echo "ci-managed: $(echo $ci_envs | tr '\n' ' ')"
-          echo "validate: $validate"
-          echo "apply: $apply"
-
-  # Credential-free checks for the in-scope clients.
+  # Credential-free checks for every client.
   validate:
     needs: setup
-    if: needs.setup.outputs.has_validate == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.setup.outputs.validate_matrix) }}
+      matrix: ${{ fromJSON(needs.setup.outputs.all_matrix) }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
@@ -126,41 +99,95 @@ jobs:
           client_tf_init "${{ matrix.env }}" -backend=false
           terraform validate
 
-  # Plan for the in-scope CI-managed clients. Each runs in its own GitHub
-  # Environment, whose approval mints the env-scoped OIDC token, and whose scoped
-  # variables supply the role + region.
+  # Read-only plan for every CI-managed client — no approval. Records which
+  # clients have changes; only those go on to apply.
   plan:
     needs: [setup, validate]
-    if: needs.setup.outputs.has_apply == 'true'
+    if: needs.setup.outputs.has_ci == 'true'
     runs-on: ubuntu-latest
-    environment: ${{ matrix.env }}
     strategy:
       fail-fast: false
-      matrix: ${{ fromJSON(needs.setup.outputs.apply_matrix) }}
+      matrix: ${{ fromJSON(needs.setup.outputs.ci_matrix) }}
+    env:
+      CLIENT: ${{ matrix.env }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
-      - name: Configure AWS credentials (OIDC)
+          terraform_wrapper: false
+      - name: Read client file
+        id: client
+        run: |
+          source infra/scripts/lib/client.sh
+          echo "plan_role=$(client_plan_role_arn "$CLIENT")" >> "$GITHUB_OUTPUT"
+          echo "region=$(client_get "$CLIENT" region)" >> "$GITHUB_OUTPUT"
+      - name: Configure AWS credentials (read-only plan role)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ vars.AWS_TF_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ steps.client.outputs.plan_role }}
+          aws-region: ${{ steps.client.outputs.region }}
       - name: Plan
-        run: infra/scripts/tf.sh "${{ matrix.env }}" plan -no-color -input=false
+        run: |
+          set +e
+          infra/scripts/tf.sh "$CLIENT" plan -no-color -input=false -detailed-exitcode > plan.txt 2>&1
+          rc=$?
+          set -e
+          cat plan.txt
+          case $rc in
+            0) summary="no changes" ;;
+            2) summary="**has changes — needs approval**"; mkdir -p changes; touch "changes/$CLIENT" ;;
+            *) echo "::error::plan failed for $CLIENT"; exit $rc ;;
+          esac
+          {
+            echo "### $CLIENT — $summary"
+            echo '<details><summary>plan</summary>'; echo; echo '```'
+            grep -E '^\s*[#~+-]|^Plan:|No changes' plan.txt | head -200 || true
+            echo '```'; echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Mark client as changed
+        if: hashFiles('changes/*') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: changes-${{ matrix.env }}
+          path: changes/
+          retention-days: 1
+
+  # Which clients need an apply.
+  # Runs even if some plans failed, so the clients that planned fine still apply.
+  changes:
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.collect.outputs.matrix }}
+      has_changes: ${{ steps.collect.outputs.has_changes }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: changes-*
+          merge-multiple: true
+          path: changes
+      - name: Collect
+        id: collect
+        run: |
+          changed=$(ls changes 2>/dev/null || true)
+          echo "matrix=$(printf '%s\n' $changed | jq -R . | jq -cs '{include: map(select(length>0) | {env: .})}')" >> "$GITHUB_OUTPUT"
+          echo "has_changes=$([ -n "$changed" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "clients with changes: ${changed:-none}"
 
   # Apply after the plan + approval: zone first, then delegation, then the rest.
+  # No max-parallel: every client with changes waits at once, so GitHub's
+  # "Review deployments" dialog lists them together — tick all, approve once.
   apply:
-    needs: [setup, validate, plan]
-    if: needs.setup.outputs.has_apply == 'true'
+    needs: changes
+    if: needs.changes.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120 # includes up to 1h waiting on an outside registrar
     environment: ${{ matrix.env }}
     strategy:
       fail-fast: false
-      max-parallel: 1
-      matrix: ${{ fromJSON(needs.setup.outputs.apply_matrix) }}
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
     env:
       CLIENT: ${{ matrix.env }}
     steps:

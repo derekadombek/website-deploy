@@ -25,7 +25,7 @@ env:
   TERRAFORM_VERSION: "1.16.5" # keep in sync with .terraform-version
 
 concurrency:
-  group: terraform-${{ github.ref }} # shared with provision/teardown: never unlock mid-run
+  group: terraform # shared with Provision + Teardown (all branches): never unlock mid-run
   cancel-in-progress: false
 
 jobs:
