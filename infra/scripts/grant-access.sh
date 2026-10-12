@@ -61,7 +61,9 @@ terraform init -input=false -reconfigure \
 #    account already has one; if it does, reuse it — except when it's this
 #    access stack's own (in state), which must stay managed here.
 OIDC_URL="token.actions.githubusercontent.com"
-if terraform state list 2>/dev/null | grep -q 'aws_iam_openid_connect_provider.github'; then
+# Match the CREATED provider only — not the data-source lookup
+# (module.github_oidc.data.aws_iam_openid_connect_provider…) a reusing stack has.
+if terraform state list 2>/dev/null | grep -qx 'module.github_oidc.aws_iam_openid_connect_provider.github\[0\]'; then
   CREATE_OIDC=true
   echo "OIDC provider: managed by this access stack — keeping it"
 elif aws iam list-open-id-connect-providers --query 'OpenIDConnectProviderList[].Arn' --output text | tr '\t' '\n' | grep -q "/${OIDC_URL}\$"; then
