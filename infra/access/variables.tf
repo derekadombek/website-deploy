@@ -25,6 +25,12 @@ variable "mgmt_github_repo" {
   default     = "derekadombek/website-deploy-clients"
 }
 
+variable "mgmt_github_repo_ids" {
+  description = "Management repo's numeric ids '<ownerId>/<repoId>' (GitHub's immutable subject). Empty = known for the default repo."
+  type        = string
+  default     = ""
+}
+
 variable "mgmt_environment" {
   description = "GitHub Environment (in the mgmt repo) the Terraform role trust is scoped to — same as the site env name."
   type        = string

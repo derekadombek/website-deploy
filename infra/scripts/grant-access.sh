@@ -13,8 +13,8 @@
 # Usage:
 #   grant-access.sh --project <p> --region <r> --deploy-repo <o/r> \
 #     --mgmt-environment <env> --state-bucket <b> --lock-table <t> \
-#     [--mgmt-repo <o/r>] [--branch <b>] [--delegation-zone <zone>] \
-#     [--deploy-repo-ids <ownerId>/<repoId>]
+#     [--mgmt-repo <o/r>] [--mgmt-repo-ids <ownerId>/<repoId>] [--branch <b>] \
+#     [--delegation-zone <zone>] [--deploy-repo-ids <ownerId>/<repoId>]
 #
 #   --delegation-zone  also create <project>-dns-delegation, letting other clients
 #                      delegate subdomains of this account's <zone> to themselves.
@@ -22,7 +22,7 @@
 set -euo pipefail
 
 PROJECT="" REGION="" DEPLOY_REPO="" MGMT_ENV="" STATE_BUCKET="" LOCK_TABLE=""
-MGMT_REPO="" BRANCH="" DELEGATION_ZONE="" DEPLOY_REPO_IDS=""
+MGMT_REPO="" MGMT_REPO_IDS="" BRANCH="" DELEGATION_ZONE="" DEPLOY_REPO_IDS=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -33,6 +33,7 @@ while [ $# -gt 0 ]; do
     --state-bucket) STATE_BUCKET="$2"; shift 2;;
     --lock-table) LOCK_TABLE="$2"; shift 2;;
     --mgmt-repo) MGMT_REPO="$2"; shift 2;;
+    --mgmt-repo-ids) MGMT_REPO_IDS="$2"; shift 2;;
     --branch) BRANCH="$2"; shift 2;;
     --delegation-zone) DELEGATION_ZONE="$2"; shift 2;;
     --deploy-repo-ids) DEPLOY_REPO_IDS="$2"; shift 2;;
@@ -87,6 +88,7 @@ terraform apply -auto-approve -input=false \
   -var="tf_state_bucket=${STATE_BUCKET}" \
   -var="tf_lock_table=${LOCK_TABLE}" \
   ${MGMT_REPO:+-var="mgmt_github_repo=${MGMT_REPO}"} \
+  ${MGMT_REPO_IDS:+-var="mgmt_github_repo_ids=${MGMT_REPO_IDS}"} \
   ${BRANCH:+-var="github_branch=${BRANCH}"} \
   ${DELEGATION_ZONE:+-var="delegation_zone_name=${DELEGATION_ZONE}"}
 
