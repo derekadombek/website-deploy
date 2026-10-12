@@ -85,7 +85,7 @@ infra/                          provisioning catalog        (→ infra/README.md
   access/                        trust foundation a client applies once
 .github/workflows/
   provision-client-aws.yml       per-client plan/apply, gated by its approval
-  (+ set-ci-environment / teardown)
+  (+ set-ci-environment / teardown / unlock-client-state)
 ```
 
 ## Onboarding a site (short version)

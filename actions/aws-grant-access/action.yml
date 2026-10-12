@@ -45,7 +45,7 @@ inputs:
   terraform-version:
     description: Terraform version to install.
     required: false
-    default: "1.5.7"
+    default: "1.16.5" # keep in sync with .terraform-version
 
 runs:
   using: composite

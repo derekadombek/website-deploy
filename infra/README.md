@@ -173,6 +173,26 @@ remove one by hand after removing a client. The provision
 and teardown workflows take the client name as free text (no default) and
 reject anything without a `clients/<name>.yaml`.
 
+## Terraform version
+
+Everything runs **one** Terraform version, pinned in `.terraform-version` (and the
+workflows' `TERRAFORM_VERSION`, which CI checks matches). State written by a newer
+Terraform can't be read by an older one, so match it locally:
+
+```bash
+brew uninstall terraform; brew install tfenv && tfenv install && tfenv use
+```
+
+(`tfenv` reads `.terraform-version`.) The `aws-grant-access` action pins the same
+version — move the `v1` tag after changing it so client repos pick it up.
+
+## Stale state lock
+
+A cancelled or crashed run can leave its lock behind ("Error acquiring the state
+lock"). When **no run for that client is still going**, run **Unlock Client State**
+with the client and the lock ID from the error — it runs on the client's own role,
+so you need no credentials for their account.
+
 ## Verify
 
 ```bash
