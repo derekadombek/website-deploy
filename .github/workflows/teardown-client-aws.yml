@@ -22,6 +22,12 @@ permissions:
   id-token: write # OIDC token to assume the AWS role
   contents: read
 
+# One Terraform version everywhere — keep in sync with .terraform-version (the
+# validate job checks). State written by a newer Terraform can't be read by an
+# older one, so never let CI drift ahead of your laptop.
+env:
+  TERRAFORM_VERSION: "1.16.5"
+
 concurrency:
   group: terraform-${{ github.ref }} # shared with provision-client-aws.yml so apply/destroy never race on state
   cancel-in-progress: false
@@ -57,6 +63,8 @@ jobs:
 
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
 
       # Subdomain delegated from another client's zone → remove that NS record
       # first, so the parent zone isn't left pointing at a deleted zone.

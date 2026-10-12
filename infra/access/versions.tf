@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.16.5" # = .terraform-version; older can't read this state
   required_providers {
     aws = {
       source  = "hashicorp/aws"
