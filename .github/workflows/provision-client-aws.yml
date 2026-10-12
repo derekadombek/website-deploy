@@ -26,10 +26,6 @@ on:
       client:
         description: Client name (clients/<name>.yaml), or "all".
         required: true
-      confirm_fresh:
-        description: First-ever provision of this client (empty Terraform state)?
-        type: boolean
-        default: false
 
 permissions:
   id-token: write # OIDC token to assume the AWS role
@@ -175,8 +171,6 @@ jobs:
 
       - name: Create DNS zone (if this client gets one)
         id: zone
-        env:
-          CONFIRM_FRESH: ${{ inputs.confirm_fresh }}
         run: |
           infra/scripts/onboard-site.sh --phase create-zone "$CLIENT" | tee -a "$GITHUB_STEP_SUMMARY"
           ns=$(infra/scripts/tf.sh "$CLIENT" output -json hosted_zone_name_servers | jq -r '.[]' | tr '\n' ' ')

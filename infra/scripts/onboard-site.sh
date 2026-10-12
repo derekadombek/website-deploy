@@ -22,14 +22,13 @@
 #
 # Auth: uses the active AWS creds/profile (local) or OIDC role (CI).
 #
-# Guardrail: refuses to apply against empty Terraform state unless CONFIRM_FRESH
-# is set — empty state on a re-run means lost/mis-pointed state, and applying
-# would recreate resources + silently duplicate the Route 53 zone. Set
-# CONFIRM_FRESH=1 only for the first-ever provision of an env.
+# Guardrail: with empty Terraform state it checks the account for this client's
+# site (bucket, CloudFront, created zone) and refuses if any of it exists —
+# that means lost/mis-pointed state, and applying would recreate resources +
+# silently duplicate the Route 53 zone. Nothing found = genuine first run.
 #
 # Usage:
 #   AWS_PROFILE=<bootstrap> onboard-site.sh [--phase all|create-zone|finish] <client>
-#   CONFIRM_FRESH=1 onboard-site.sh --phase create-zone <client>   # first run
 
 set -euo pipefail
 
@@ -47,26 +46,63 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/client.sh"
 POLL_INTERVAL=30  # seconds between delegation checks
 POLL_TIMEOUT=3600 # give up after 1h of waiting on the registrar
 
-confirm_fresh_or_refuse() {
-  # An empty state means Terraform will CREATE everything — correct on a genuine
-  # first run, but on a RE-RUN it usually means lost/mis-pointed state, and
-  # applying would collide with existing resources AND duplicate the Route 53
-  # zone (Route 53 allows same-name zones). Require explicit acknowledgement.
-  [ -n "$(terraform state list 2>/dev/null)" ] && return 0
-  case "${CONFIRM_FRESH:-}" in
-    1 | true | yes) echo "==> empty state + CONFIRM_FRESH set — first-time provision" ;;
-    *)
-      cat >&2 <<EOF
-REFUSING TO APPLY: Terraform state for '${ENV_NAME}' is empty.
-  - FIRST time provisioning this env?  Re-run with CONFIRM_FRESH=1
-    (or set confirm_fresh: true on the workflow).
-  - Provisioned it before?  Your state is missing or state_bucket/lock_table in
-    clients/${ENV_NAME}.yaml is mis-pointed. Fix the backend first — applying now would recreate
-    resources and create a duplicate Route 53 zone.
-EOF
-      exit 2
+# Empty state is right on a genuine first run, but on a re-run it means lost or
+# mis-pointed state — applying would collide with the existing site AND silently
+# duplicate the Route 53 zone (Route 53 allows same-name zones). So when state is
+# empty, look in the account for this client's site; go ahead only if none of it
+# is there.
+# Sets FOUND. Runs in the main shell (not $(…)) so a failed AWS call aborts
+# under set -e instead of silently reading as "nothing found".
+existing_resources() {
+  local acct bucket zone err
+  FOUND=""
+  acct="$(aws sts get-caller-identity --query Account --output text)"
+  bucket="${ENV_NAME}-site-${acct}"
+
+  # 404 = no such bucket; anything else (ours, or 403 someone else's) = taken.
+  if err="$(aws s3api head-bucket --bucket "${bucket}" 2>&1)" || ! echo "${err}" | grep -q '404'; then
+    FOUND+="  - S3 bucket ${bucket}\n"
+  fi
+
+  local dist
+  dist="$(aws cloudfront list-distributions \
+    --query "DistributionList.Items[?Origins.Items[?starts_with(DomainName, '${bucket}.s3.')]].Id" --output text)"
+  [ -z "${dist}" ] || [ "${dist}" = "None" ] || FOUND+="  - CloudFront distribution ${dist}\n"
+
+  # Only a zone this client would CREATE counts — an existing-zone client's zone
+  # is supposed to be there.
+  case "$(client_get "${ENV_NAME}" dns existing-zone)" in
+    route53-registrar | external)
+      zone="$(client_get "${ENV_NAME}" hosted_zone "$(client_get "${ENV_NAME}" domain)")"
+      if [ -n "${zone}" ]; then
+        local zid
+        zid="$(aws route53 list-hosted-zones-by-name --dns-name "${zone}" --max-items 1 \
+          --query "HostedZones[?Name=='${zone}.'] | [0].Id" --output text)"
+        [ -z "${zid}" ] || [ "${zid}" = "None" ] || FOUND+="  - Route 53 zone ${zone} (${zid##*/})\n"
+      fi
       ;;
   esac
+}
+
+check_fresh_or_refuse() {
+  [ -n "$(terraform state list 2>/dev/null)" ] && return 0
+
+  echo "==> Terraform state for '${ENV_NAME}' is empty — checking the account for an existing site"
+  existing_resources
+  if [ -z "${FOUND}" ]; then
+    echo "==> nothing found — first-time provision"
+    return 0
+  fi
+  cat >&2 <<EOF
+REFUSING TO APPLY: Terraform state for '${ENV_NAME}' is empty, but its site
+already exists in this account:
+$(printf '%b' "${FOUND}")
+The state is missing, or state_bucket/lock_table in clients/${ENV_NAME}.yaml point
+at the wrong place. Applying now would collide with these and create a duplicate
+Route 53 zone. Point the backend at the right state (or delete these by hand if
+they're leftovers), then re-run.
+EOF
+  exit 2
 }
 
 create_zone() {
@@ -88,13 +124,21 @@ print_ns() {
   echo
 }
 
+# True once public DNS for the zone answers with Route 53 nameservers.
+delegation_live() {
+  local domain live
+  domain="$(terraform output -raw hosted_zone_name)"
+  live="$(dig +short NS "${domain}" @1.1.1.1 2>/dev/null || true)"
+  echo "${live}" | grep -qi 'awsdns'
+}
+
 wait_for_delegation() {
   local domain; domain="$(terraform output -raw hosted_zone_name)"
   echo "==> waiting for delegation of ${domain} to go live…"
   local deadline=$(( $(date +%s) + POLL_TIMEOUT ))
-  until live="$(dig +short NS "${domain}" @1.1.1.1 2>/dev/null)"; [ -n "${live}" ] && echo "${live}" | grep -qi 'awsdns'; do
+  until delegation_live; do
     if [ "$(date +%s)" -ge "${deadline}" ]; then
-      echo "timed out waiting for delegation. Once it's live, re-run --phase finish." >&2
+      echo "timed out waiting for delegation. Once it's live, re-run Provision (or --phase finish locally)." >&2
       exit 1
     fi
     sleep "${POLL_INTERVAL}"
@@ -114,9 +158,11 @@ client_tf_init "${ENV_NAME}"
 
 case "${PHASE}" in
   create-zone)
-    confirm_fresh_or_refuse
+    check_fresh_or_refuse
     create_zone
-    if has_zone; then
+    if has_zone && delegation_live; then
+      echo "==> $(terraform output -raw hosted_zone_name) is already delegated — nothing to do for DNS."
+    elif has_zone; then
       print_ns
       if [ -n "$(client_get "${ENV_NAME}" delegate_from)" ]; then
         echo "==> delegate_from is set — the NS record is added in $(client_parent_zone "${ENV_NAME}") automatically."
@@ -132,7 +178,7 @@ case "${PHASE}" in
     full_apply
     ;;
   all)
-    confirm_fresh_or_refuse
+    check_fresh_or_refuse
     create_zone
     if has_zone; then
       print_ns
