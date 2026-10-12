@@ -90,10 +90,8 @@ are no ARNs to copy between steps.
    handles every DNS case from the client file — see *DNS* below. For an outside
    registrar it prints 4 nameservers in the run summary and waits while you
    paste them.
-4. **Wire the app repo** — Variables `AWS_REGION`,
-   `AWS_DEPLOY_ROLE_ARN` (`arn:aws:iam::<acct>:role/<name>-github-deploy`),
-   `S3_BUCKET` + `CLOUDFRONT_DISTRIBUTION_ID` (`tf.sh <name> output`), and the
-   deploy workflow from the [top-level README](../README.md). Push → live.
+4. **Wire the app repo** — copy [`templates/client-repo/deploy.yml`](../templates/client-repo/deploy.yml)
+   into it and fill in the client name + account id. No repo Variables. Push → live.
 
 Your **own** sites follow the same flow.
 

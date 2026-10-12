@@ -12,22 +12,24 @@ additive: drop a new `<name>/action.yml` here and document it below.
 ## `aws-static-site`
 
 Optionally build a static site, then `aws s3 sync` + CloudFront invalidation,
-authenticating keylessly via GitHub OIDC. Account-agnostic — role, bucket, and
-distribution are inputs, so the same action deploys any site in any account.
+authenticating keylessly via GitHub OIDC. Give it the client name + AWS account
+id and it works out the rest — deploy role `<name>-github-deploy`, bucket
+`<name>-site-<account>`, and the CloudFront distribution serving that bucket —
+so the app repo needs **no Variables or secrets**.
 
 ### Inputs
 
 | Input | Required | Default | Purpose |
 |---|---|---|---|
-| `aws-region` | yes | — | Region of the S3 bucket. |
-| `role-arn` | yes | — | Deploy role to assume via OIDC. |
-| `s3-bucket` | yes | — | Destination bucket name. |
-| `cloudfront-distribution-id` | yes | — | Distribution to invalidate. |
+| `client-name` | yes* | — | Client name (`clients/<name>.yaml` in website-deploy). |
+| `aws-account-id` | yes* | — | Client's 12-digit AWS account id (quote it). |
+| `aws-region` | no | `us-west-2` | Region of the S3 bucket. |
 | `source-dir` | yes | — | Directory synced to the bucket (`site`, `dist`, …). |
 | `build-command` | no | `""` | Build command; skipped if empty. |
 | `install-command` | no | `""` | Install command; skipped if empty. |
 | `node-version` | no | `20` | Node version when building/installing. |
 | `working-directory` | no | `.` | Where install/build run; `source-dir` resolves from here. |
+| `role-arn`, `s3-bucket`, `cloudfront-distribution-id` | * | — | Older repos: pass all three instead of `client-name` + `aws-account-id`. |
 
 ### Caller requirements
 
@@ -39,8 +41,8 @@ permissions:
   contents: read
 ```
 
-The `role-arn` must trust the **calling repo's** OIDC subject (this repo's
-Terraform provisions exactly such a deploy role per site).
+The deploy role must trust the **calling repo's** OIDC subject — the client's
+`aws-grant-access` run creates exactly that, for the app repo it was given.
 
 ### Example — build an Astro site and deploy
 
@@ -66,10 +68,8 @@ jobs:
       - uses: actions/checkout@v4
       - uses: derekadombek/website-deploy/actions/aws-static-site@v1
         with:
-          aws-region: ${{ vars.AWS_REGION }}
-          role-arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          s3-bucket: ${{ vars.S3_BUCKET }}
-          cloudfront-distribution-id: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+          client-name: acme
+          aws-account-id: "123456789012"
           install-command: npm ci
           build-command: npm run build
           source-dir: dist
@@ -81,15 +81,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: derekadombek/website-deploy/actions/aws-static-site@v1
         with:
-          aws-region: ${{ vars.AWS_REGION }}
-          role-arn: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
-          s3-bucket: ${{ vars.S3_BUCKET }}
-          cloudfront-distribution-id: ${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}
+          client-name: acme
+          aws-account-id: "123456789012"
           source-dir: site
 ```
 
-The four `vars.*` come from `terraform output` after provisioning the site (see
-[`../infra/README.md`](../infra/README.md)).
+Ready-to-copy version: [`../templates/client-repo/deploy.yml`](../templates/client-repo/deploy.yml).
 
 ---
 

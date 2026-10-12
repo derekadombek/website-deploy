@@ -1,0 +1,36 @@
+name: Deploy
+
+# Copy into the client's app repo as .github/workflows/deploy.yml and fill in
+# the two CHANGE-ME values (client name + AWS account id). Nothing else to set
+# up — no repo Variables or secrets. Every push to main that touches the site
+# builds it (optional), syncs it to S3, and refreshes CloudFront.
+#
+# Works once the client has run grant-access and been provisioned.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  id-token: write # mint the OIDC token the deploy role trusts
+  contents: read
+
+concurrency:
+  group: deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: derekadombek/website-deploy/actions/aws-static-site@v1
+        with:
+          client-name: CHANGE-ME # = clients/<name>.yaml in website-deploy
+          aws-account-id: "CHANGE-ME" # 12 digits, quoted
+          aws-region: us-west-2
+          source-dir: site # folder that holds the built site (e.g. dist)
+          # For a site with a build step, uncomment:
+          # install-command: npm ci
+          # build-command: npm run build
