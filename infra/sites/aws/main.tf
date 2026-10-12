@@ -7,8 +7,15 @@ variable "client" {
   type        = string
 }
 
+variable "clients_dir" {
+  description = "Folder holding the client files (CLIENTS_DIR, set by infra/scripts/tf.sh). Empty = clients/ in this repo."
+  type        = string
+  default     = ""
+}
+
 locals {
-  cfg = yamldecode(file("${path.module}/../../../clients/${var.client}.yaml"))
+  clients_dir = var.clients_dir != "" ? var.clients_dir : "${path.module}/../../../clients"
+  cfg         = yamldecode(file("${local.clients_dir}/${var.client}.yaml"))
 
   domain = try(local.cfg.domain, "")
   dns    = try(local.cfg.dns, "existing-zone")
