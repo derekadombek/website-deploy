@@ -83,8 +83,7 @@ are no ARNs to copy between steps.
    PR, merge. Merging runs **Set CI Environment** automatically: it creates the
    client's GitHub Environment with `AWS_TF_ROLE_ARN` (built from the account id)
    + `AWS_REGION` + you as reviewer.
-3. **Provision** — **Provision Client's AWS Setup**, client `<name>`
-   (`confirm_fresh` on the first run), approve. It handles every DNS case from
+3. **Provision** — **Provision Client's AWS Setup**, client `<name>`, approve. It handles every DNS case from
    the client file — see *DNS* below. For an outside registrar it prints 4
    nameservers in the run summary and waits while you paste them.
 4. **Wire the app repo** — Variables `AWS_REGION`,
@@ -124,8 +123,7 @@ Setting `domain` needs a Route 53 hosted zone for it. Pick `dns` in the client f
     them at the registrar**, then finishes the apply so it never hangs at cert
     validation. Locally, the babysitter script does the same:
     ```bash
-    # first-ever provision needs CONFIRM_FRESH=1 (guardrail below)
-    CONFIRM_FRESH=1 AWS_PROFILE=<client-bootstrap> infra/scripts/onboard-site.sh <client>
+    AWS_PROFILE=<client-bootstrap> infra/scripts/onboard-site.sh <client>
     ```
     (Re-runnable — if you bail during the wait, run it again and it resumes.)
 
@@ -133,9 +131,10 @@ Setting `domain` needs a Route 53 hosted zone for it. Pick `dns` in the client f
 > onboard is a safe no-op (the backend creator skips existing resources; apply is
 > declarative). The danger is a re-run that can't see its state (deleted/renamed
 > state bucket, wrong backend) — Terraform would recreate everything and silently
-> make a **duplicate Route 53 zone**. So `onboard-site.sh` (and Provision)
-> **refuse to apply against empty state** unless `CONFIRM_FRESH=1` /
-> `confirm_fresh`, which you set only for the genuine first run.
+> make a **duplicate Route 53 zone**. So when state is empty, `onboard-site.sh`
+> (and Provision) **check the account** for the client's site bucket, CloudFront
+> distribution and (if it creates one) DNS zone. Nothing there = genuine first run,
+> go ahead; anything there = **refuse**, listing what it found. No flag to set.
 
 ### Delegation role (for `delegate_from`)
 
