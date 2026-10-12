@@ -1,15 +1,19 @@
 name: Provision Client's AWS Setup
 
-# Brings EVERY client's AWS setup in line with its client file. No inputs:
+# Brings EVERY client's AWS setup in line with its client file. One input, `apply`
+# (default false):
 #
-#   validate → plan (every client, read-only, no approval)
-#            → apply (only clients whose plan shows changes — ONE approval)
+#   validate → plan (every client, read-only)
+#            → apply (only with apply: true, only clients whose plan shows changes)
 #
-# The plan runs on each client's read-only <name>-plan role, which trusts this
-# repo's main branch — so run it from main. The apply runs on each client's
-# Terraform role, which only an approved job in that client's GitHub Environment
-# can get. All applies wait together: in the "Review deployments" dialog, tick
-# every client and approve once. Read the plans in the run summary first.
+# Plan only is the default, so a run never changes anything you haven't read:
+# read the plans in the run summary, then run again with apply ticked.
+#
+# The plan runs on each client's read-only <name>-plan role, which trusts the
+# clients repo's main branch — so run it from main. The apply runs on each
+# client's Terraform role, which only a job in that client's GitHub Environment
+# can get. If the environment has required reviewers (only some GitHub plans
+# allow them on a private repo), the applies also wait for that approval.
 #
 # A client is CI-managed iff a GitHub Environment with its name exists (Set CI
 # Environment creates it). Validate-only clients (ci: false) are only checked.
@@ -21,7 +25,7 @@ name: Provision Client's AWS Setup
 #     role), then applies. Hands-off.
 #   - dns: external, domain at an outside registrar → creates the zone, prints
 #     the 4 nameservers in the run summary, and WAITS (up to 1h) while you paste
-#     them at the registrar; then applies. No second approval needed.
+#     them at the registrar; then applies.
 on:
   workflow_call:
     inputs:
@@ -29,6 +33,10 @@ on:
         description: website-deploy ref to run (the same tag/sha as in your `uses:` line).
         type: string
         required: true
+      apply:
+        description: Apply the clients whose plan shows changes. False = plan only.
+        type: boolean
+        default: false
 
 permissions:
   id-token: write # OIDC token to assume the AWS roles
@@ -214,13 +222,20 @@ jobs:
           echo "matrix=$(printf '%s\n' $changed | jq -R . | jq -cs '{include: map(select(length>0) | {env: .})}')" >> "$GITHUB_OUTPUT"
           echo "has_changes=$([ -n "$changed" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "clients with changes: ${changed:-none}"
+          if [ -n "$changed" ] && [ "${{ inputs.apply }}" != "true" ]; then
+            {
+              echo "### Plan only — nothing was changed"
+              echo "Clients with changes: $(echo $changed). Read their plans above, then run"
+              echo "Provision again with **apply** ticked."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
-  # Apply after the plan + approval: zone first, then delegation, then the rest.
-  # No max-parallel: every client with changes waits at once, so GitHub's
-  # "Review deployments" dialog lists them together — tick all, approve once.
+  # Apply (only with apply: true): zone first, then delegation, then the rest.
+  # No max-parallel: if the environments have reviewers, every client with
+  # changes waits at once, so one "Review deployments" approval covers them all.
   apply:
     needs: changes
-    if: needs.changes.outputs.has_changes == 'true'
+    if: inputs.apply && needs.changes.outputs.has_changes == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 120 # includes up to 1h waiting on an outside registrar
     environment: ${{ matrix.env }}

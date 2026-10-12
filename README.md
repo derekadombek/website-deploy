@@ -68,8 +68,8 @@ client name + account id — no repo Variables. Full template:
 GitHub OIDC federates **directly into the target account** — there is no central
 ops account, no `assume_role` chain, no stored credentials. Each account holds a
 low-privilege **deploy role** (app repo, branch-scoped, runs on push) and a broad
-**Terraform role** (this repo, scoped to a GitHub Environment with required
-reviewers, so it's inert without a human approval). Full model + onboarding guide:
+**Terraform role** (the private clients repo, scoped to that client's GitHub
+Environment; Provision only plans unless you tick *apply*). Full model + onboarding guide:
 [`infra/README.md`](infra/README.md).
 
 ## Repo layout

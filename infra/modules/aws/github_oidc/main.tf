@@ -100,9 +100,10 @@ resource "aws_iam_role_policy" "deploy" {
 # unrelated principals; (2) trust is keyed to the MANAGEMENT repo scoped to a
 # GitHub Environment (`environment:<mgmt_environment>`), NOT a branch — so the
 # only token that satisfies this trust is one minted for a job that declared
-# that environment; (3) that environment has required reviewers, so the token
-# (and thus this role) is unusable until a human approves. The broad role
-# stands permanently but is inert without that approval.
+# that environment, and only the management repo's writers can add such a job;
+# (3) Provision only applies when run with apply ticked, after its plan has been
+# read (and, where the GitHub plan allows, the environment's required reviewers
+# add an approval on top).
 
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
