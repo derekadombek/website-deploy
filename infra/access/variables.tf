@@ -20,9 +20,9 @@ variable "github_branch" {
 }
 
 variable "mgmt_github_repo" {
-  description = "Management repo allowed to run Terraform (Terraform role trust, environment-scoped)."
+  description = "Management repo allowed to run Terraform (Terraform role trust, environment-scoped). The private clients repo, whose workflows call this package's."
   type        = string
-  default     = "derekadombek/website-deploy"
+  default     = "derekadombek/website-deploy-clients"
 }
 
 variable "mgmt_environment" {

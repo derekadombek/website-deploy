@@ -107,7 +107,7 @@ handed to you; from then on it's keyless.
 | `mgmt-environment` | yes | — | GitHub Environment the management role trusts (= the site env name). |
 | `state-bucket` | yes | — | State bucket to create. |
 | `lock-table` | yes | — | Lock table to create. |
-| `mgmt-github-repo` | no | `derekadombek/website-deploy` | Management repo. |
+| `mgmt-github-repo` | no | `derekadombek/website-deploy-clients` | Management repo (private; runs this package's workflows). |
 | `github-branch` | no | `main` | App repo deploy branch. |
 | `role-arn` | no | `""` | Admin role to assume via OIDC; empty = creds from a prior step. |
 
