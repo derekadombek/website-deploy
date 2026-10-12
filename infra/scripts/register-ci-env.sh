@@ -48,7 +48,7 @@ if ! err="$(put_env '{"wait_timer": 0, "prevent_self_review": false,
     *"billing plan"*) ;;
     *) echo "${err}" >&2; exit 1 ;;
   esac
-  put_env '{"wait_timer": 0, "deployment_branch_policy": null}' >&2
+  put_env '{"deployment_branch_policy": null}' >&2 # no wait timer either: also a paid rule
   GATE="NO APPROVAL GATE: this repo's plan doesn't allow required reviewers"
   msg="'${ENV_NAME}': no required reviewer (not available on this repo's GitHub plan) — applies won't wait for approval."
   if [ -n "${GITHUB_ACTIONS:-}" ]; then echo "::warning::${msg}"; else echo "WARNING: ${msg}" >&2; fi
