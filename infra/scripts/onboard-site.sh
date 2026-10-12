@@ -124,13 +124,21 @@ print_ns() {
   echo
 }
 
+# True once public DNS for the zone answers with Route 53 nameservers.
+delegation_live() {
+  local domain live
+  domain="$(terraform output -raw hosted_zone_name)"
+  live="$(dig +short NS "${domain}" @1.1.1.1 2>/dev/null || true)"
+  echo "${live}" | grep -qi 'awsdns'
+}
+
 wait_for_delegation() {
   local domain; domain="$(terraform output -raw hosted_zone_name)"
   echo "==> waiting for delegation of ${domain} to go live…"
   local deadline=$(( $(date +%s) + POLL_TIMEOUT ))
-  until live="$(dig +short NS "${domain}" @1.1.1.1 2>/dev/null)"; [ -n "${live}" ] && echo "${live}" | grep -qi 'awsdns'; do
+  until delegation_live; do
     if [ "$(date +%s)" -ge "${deadline}" ]; then
-      echo "timed out waiting for delegation. Once it's live, re-run --phase finish." >&2
+      echo "timed out waiting for delegation. Once it's live, re-run Provision (or --phase finish locally)." >&2
       exit 1
     fi
     sleep "${POLL_INTERVAL}"
@@ -152,7 +160,9 @@ case "${PHASE}" in
   create-zone)
     check_fresh_or_refuse
     create_zone
-    if has_zone; then
+    if has_zone && delegation_live; then
+      echo "==> $(terraform output -raw hosted_zone_name) is already delegated — nothing to do for DNS."
+    elif has_zone; then
       print_ns
       if [ -n "$(client_get "${ENV_NAME}" delegate_from)" ]; then
         echo "==> delegate_from is set — the NS record is added in $(client_parent_zone "${ENV_NAME}") automatically."
