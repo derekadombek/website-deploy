@@ -24,16 +24,31 @@ name: Provision Client's AWS Setup
 #     them at the registrar; then applies. No second approval needed.
 on:
   workflow_dispatch: {}
+  workflow_call:
+    inputs:
+      package_ref:
+        description: website-deploy ref to run (the same tag/sha as in your `uses:` line).
+        type: string
+        required: true
 
 permissions:
   id-token: write # OIDC token to assume the AWS roles
   contents: read
+  actions: read # list the repo's environments (needed when the repo is private)
 
-# One Terraform version everywhere — keep in sync with .terraform-version (the
-# validate job checks). State written by a newer Terraform can't be read by an
-# older one, so never let CI drift ahead of your laptop.
+# Callable from a private clients repo (workflow_call): its clients/ is checked out
+# at the workspace root, this package at package_ref into pkg/. Run directly here,
+# both come from this repo.
 env:
+  CLIENTS_DIR: ${{ github.workspace }}/clients
+  # One Terraform version everywhere — keep in sync with .terraform-version (the
+  # validate job checks). State written by a newer Terraform can't be read by an
+  # older one, so never let CI drift ahead of your laptop.
   TERRAFORM_VERSION: "1.16.5"
+
+defaults:
+  run:
+    working-directory: pkg
 
 # One Terraform run at a time across ALL branches (shared with Teardown and
 # Unlock), so two runs can never hold the same client's state.
@@ -50,11 +65,19 @@ jobs:
       has_ci: ${{ steps.scope.outputs.has_ci }}
     steps:
       - name: Run from main
+        working-directory: . # before checkout: pkg/ isn't there yet
         if: github.ref != 'refs/heads/main'
         run: |
           echo "::error::Run Provision from main — the read-only plan roles only trust main."
           exit 1
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4 # client files: clients/ in the calling repo (or this one)
+        with:
+          sparse-checkout: clients
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref (or this run's commit)
+        with:
+          repository: derekadombek/website-deploy
+          ref: ${{ inputs.package_ref || github.sha }}
+          path: pkg
       - name: List clients
         id: scope
         env:
@@ -83,7 +106,14 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.setup.outputs.all_matrix) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4 # client files: clients/ in the calling repo (or this one)
+        with:
+          sparse-checkout: clients
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref (or this run's commit)
+        with:
+          repository: derekadombek/website-deploy
+          ref: ${{ inputs.package_ref || github.sha }}
+          path: pkg
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
@@ -111,7 +141,14 @@ jobs:
     env:
       CLIENT: ${{ matrix.env }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4 # client files: clients/ in the calling repo (or this one)
+        with:
+          sparse-checkout: clients
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref (or this run's commit)
+        with:
+          repository: derekadombek/website-deploy
+          ref: ${{ inputs.package_ref || github.sha }}
+          path: pkg
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
@@ -146,11 +183,11 @@ jobs:
             echo '```'; echo '</details>'
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Mark client as changed
-        if: hashFiles('changes/*') != ''
+        if: hashFiles('pkg/changes/*') != ''
         uses: actions/upload-artifact@v4
         with:
           name: changes-${{ matrix.env }}
-          path: changes/
+          path: pkg/changes/
           retention-days: 1
 
   # Which clients need an apply.
@@ -162,6 +199,9 @@ jobs:
     outputs:
       matrix: ${{ steps.collect.outputs.matrix }}
       has_changes: ${{ steps.collect.outputs.has_changes }}
+    defaults:
+      run:
+        working-directory: . # no checkout in this job
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -191,7 +231,14 @@ jobs:
     env:
       CLIENT: ${{ matrix.env }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4 # client files: clients/ in the calling repo (or this one)
+        with:
+          sparse-checkout: clients
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref (or this run's commit)
+        with:
+          repository: derekadombek/website-deploy
+          ref: ${{ inputs.package_ref || github.sha }}
+          path: pkg
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}

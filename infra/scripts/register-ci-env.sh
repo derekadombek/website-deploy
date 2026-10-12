@@ -22,7 +22,8 @@ client_check "${ENV_NAME}"
 ROLE_ARN="$(client_tf_role_arn "${ENV_NAME}")"
 REGION="$(client_get "${ENV_NAME}" region)"
 
-REPO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
+# In CI: the repo running the workflow (the clients repo, not the package checkout).
+REPO="${GITHUB_REPOSITORY:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
 
 if [ -n "${REVIEWER}" ]; then
   RID="$(gh api "users/${REVIEWER}" --jq .id)"
