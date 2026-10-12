@@ -113,11 +113,16 @@ create_zone() {
     -target='module.site.aws_route53domains_registered_domain.this' >/dev/null 2>&1 || true
 }
 
+# The zone's name, from the client file (as infra/sites/aws computes it) — not
+# `terraform output`: a targeted apply (create_zone) doesn't save outputs that
+# don't depend on a targeted resource, so on a fresh state it isn't there.
+zone_name() { client_get "${ENV_NAME}" hosted_zone "$(client_get "${ENV_NAME}" domain)"; }
+
 zone_ns_json() { terraform output -json hosted_zone_name_servers 2>/dev/null || echo '[]'; }
 has_zone() { [ "$(zone_ns_json | tr -d '[:space:]')" != "[]" ]; }
 
 print_ns() {
-  local domain; domain="$(terraform output -raw hosted_zone_name)"
+  local domain; domain="$(zone_name)"
   echo
   echo "==> Hosted zone created for ${domain}. Set these nameservers at the registrar:"
   zone_ns_json | tr -d '[:space:]' | tr ',' '\n' | sed 's/[]["]//g' | grep . | sed 's/^/      /'
@@ -127,13 +132,13 @@ print_ns() {
 # True once public DNS for the zone answers with Route 53 nameservers.
 delegation_live() {
   local domain live
-  domain="$(terraform output -raw hosted_zone_name)"
+  domain="$(zone_name)"
   live="$(dig +short NS "${domain}" @1.1.1.1 2>/dev/null || true)"
   echo "${live}" | grep -qi 'awsdns'
 }
 
 wait_for_delegation() {
-  local domain; domain="$(terraform output -raw hosted_zone_name)"
+  local domain; domain="$(zone_name)"
   echo "==> waiting for delegation of ${domain} to go live…"
   local deadline=$(( $(date +%s) + POLL_TIMEOUT ))
   until delegation_live; do
@@ -164,7 +169,7 @@ case "${PHASE}" in
     check_fresh_or_refuse
     create_zone
     if has_zone && delegation_live; then
-      echo "==> $(terraform output -raw hosted_zone_name) is already delegated — nothing to do for DNS."
+      echo "==> $(zone_name) is already delegated — nothing to do for DNS."
     elif has_zone; then
       print_ns
       if [ -n "$(client_get "${ENV_NAME}" delegate_from)" ]; then
