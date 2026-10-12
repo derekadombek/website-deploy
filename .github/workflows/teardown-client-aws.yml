@@ -9,14 +9,6 @@ name: Teardown Client's AWS Setup
 # deploy/Terraform roles + state backend) is a separate state and is left intact,
 # so you can re-provision the site again later with a plain Terraform dispatch.
 on:
-  workflow_dispatch:
-    inputs:
-      client:
-        description: Client to DESTROY (one at a time — no "all").
-        required: true
-      confirm:
-        description: Retype the client name to confirm destruction.
-        required: true
   workflow_call:
     inputs:
       package_ref:
@@ -36,9 +28,9 @@ permissions:
   id-token: write # OIDC token to assume the AWS role
   contents: read
 
-# Callable from a private clients repo (workflow_call): its clients/ is checked out
-# at the workspace root, this package at package_ref into pkg/. Run directly here,
-# both come from this repo.
+# Called from the private clients repo (workflow_call) — it isn't run here. Its
+# clients/ is checked out at the workspace root, this package at package_ref
+# into pkg/.
 env:
   CLIENTS_DIR: ${{ github.workspace }}/clients
   # One Terraform version everywhere — keep in sync with .terraform-version (the
@@ -60,13 +52,13 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4 # client files: clients/ in the calling repo (or this one)
+      - uses: actions/checkout@v4 # client files: clients/ in the calling repo
         with:
           sparse-checkout: clients
-      - uses: actions/checkout@v4 # the package, at the caller's pinned ref (or this run's commit)
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref
         with:
           repository: derekadombek/website-deploy
-          ref: ${{ inputs.package_ref || github.sha }}
+          ref: ${{ inputs.package_ref }}
           path: pkg
       - name: Check client file
         env:
@@ -91,13 +83,13 @@ jobs:
             echo "::error::Confirmation '$CONFIRM' does not match client '$CLIENT'. Aborting."; exit 1
           fi
 
-      - uses: actions/checkout@v4 # client files: clients/ in the calling repo (or this one)
+      - uses: actions/checkout@v4 # client files: clients/ in the calling repo
         with:
           sparse-checkout: clients
-      - uses: actions/checkout@v4 # the package, at the caller's pinned ref (or this run's commit)
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref
         with:
           repository: derekadombek/website-deploy
-          ref: ${{ inputs.package_ref || github.sha }}
+          ref: ${{ inputs.package_ref }}
           path: pkg
       - uses: hashicorp/setup-terraform@v3
         with:

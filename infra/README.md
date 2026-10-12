@@ -33,6 +33,7 @@ providers set `allowed_account_ids` from the client file, so Terraform refuses
 to touch any other account.
 
 ```bash
+export CLIENTS_DIR=~/repos/website-deploy-clients/clients   # the real client files
 infra/scripts/tf.sh portfolio plan     # local: uses your active AWS creds
 infra/scripts/tf.sh portfolio output
 ```
@@ -79,11 +80,11 @@ are no ARNs to copy between steps.
    name, `state-bucket` `<name>-tf-state`, `lock-table` `<name>-tf-locks`, and
    their app repo. It creates the state backend + OIDC provider + deploy,
    Terraform and read-only plan roles. They send you their **AWS account id**.
-2. **Add `clients/<name>.yaml`** (see [`clients/README.md`](../clients/README.md)) —
-   PR, merge. Merging runs **Set CI Environment** automatically: it creates the
+2. **Add `clients/<name>.yaml`** in the private clients repo (fields:
+   [`clients/README.md`](../clients/README.md)) — PR, merge. Merging runs **Set CI Environment** automatically: it creates the
    client's GitHub Environment with `AWS_TF_ROLE_ARN` (built from the account id)
    + `AWS_REGION` + you as reviewer.
-3. **Provision** — run **Provision Client's AWS Setup** from `main` (no inputs).
+3. **Provision** — run **Provision Client's AWS Setup** from the clients repo's `main` (no inputs).
    It plans **every** client without asking (read-only), then waits for one
    approval covering every client whose plan has changes — read the plans in
    the run summary, then in *Review deployments* tick them all and approve. It
@@ -172,11 +173,11 @@ Three roles per client account, three trust targets — never collapse them:
 | Role | Trusts | Can |
 |---|---|---|
 | `<name>-github-deploy` | the client's app repo, `main` | sync the site + invalidate |
-| `<name>-plan` | this repo, `main` (no approval) | **read** the site + state, take the lock |
-| `<name>-terraform` | this repo, environment `<name>` (approval) | change the site |
+| `<name>-plan` | the clients repo, `main` (no approval) | **read** the site + state, take the lock |
+| `<name>-terraform` | the clients repo, environment `<name>` (approval) | change the site |
 
-**Set CI Environment** keeps them in sync with `clients/`: it runs on every merge
-that touches `clients/` (or by hand, no inputs) and creates/updates an environment
+**Set CI Environment** keeps them in sync with `clients/`: the clients repo runs it
+on every merge that touches `clients/` (or by hand, no inputs) and creates/updates an environment
 for each client. Clients with `ci: false` (e.g. `example-client`) get none, so
 they're validated but never planned/applied. It never deletes an environment —
 remove one by hand after removing a client. Provision always covers every

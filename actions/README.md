@@ -21,7 +21,7 @@ so the app repo needs **no Variables or secrets**.
 
 | Input | Required | Default | Purpose |
 |---|---|---|---|
-| `client-name` | yes* | — | Client name (`clients/<name>.yaml` in website-deploy). |
+| `client-name` | yes* | — | Client name (its `clients/<name>.yaml` in the clients repo). |
 | `aws-account-id` | yes* | — | Client's 12-digit AWS account id (quote it). |
 | `aws-region` | no | `us-west-2` | Region of the S3 bucket. |
 | `source-dir` | yes | — | Directory synced to the bucket (`site`, `dist`, …). |

@@ -8,14 +8,6 @@ name: Unlock Client State
 # Only use it when NO run for that client is still going — unlocking under a live
 # apply lets two runs write the same state.
 on:
-  workflow_dispatch:
-    inputs:
-      client:
-        description: Client name (clients/<name>.yaml).
-        required: true
-      lock_id:
-        description: Lock ID from the error ("Lock Info → ID").
-        required: true
   workflow_call:
     inputs:
       package_ref:
@@ -35,9 +27,9 @@ permissions:
   id-token: write # OIDC token to assume the AWS role
   contents: read
 
-# Callable from a private clients repo (workflow_call): its clients/ is checked out
-# at the workspace root, this package at package_ref into pkg/. Run directly here,
-# both come from this repo.
+# Called from the private clients repo (workflow_call) — it isn't run here. Its
+# clients/ is checked out at the workspace root, this package at package_ref
+# into pkg/.
 env:
   CLIENTS_DIR: ${{ github.workspace }}/clients
   TERRAFORM_VERSION: "1.16.5" # keep in sync with .terraform-version
@@ -60,13 +52,13 @@ jobs:
         run: |
           echo "Only the repo owner may run this workflow (actor: ${{ github.actor }})." >&2
           exit 1
-      - uses: actions/checkout@v4 # client files: clients/ in the calling repo (or this one)
+      - uses: actions/checkout@v4 # client files: clients/ in the calling repo
         with:
           sparse-checkout: clients
-      - uses: actions/checkout@v4 # the package, at the caller's pinned ref (or this run's commit)
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref
         with:
           repository: derekadombek/website-deploy
-          ref: ${{ inputs.package_ref || github.sha }}
+          ref: ${{ inputs.package_ref }}
           path: pkg
       - name: Check client file + lock id
         env:
@@ -82,13 +74,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.client }} # approval gate + scoped AWS_TF_ROLE_ARN/AWS_REGION
     steps:
-      - uses: actions/checkout@v4 # client files: clients/ in the calling repo (or this one)
+      - uses: actions/checkout@v4 # client files: clients/ in the calling repo
         with:
           sparse-checkout: clients
-      - uses: actions/checkout@v4 # the package, at the caller's pinned ref (or this run's commit)
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref
         with:
           repository: derekadombek/website-deploy
-          ref: ${{ inputs.package_ref || github.sha }}
+          ref: ${{ inputs.package_ref }}
           path: pkg
       - uses: hashicorp/setup-terraform@v3
         with:

@@ -77,14 +77,15 @@ reviewers, so it's inert without a human approval). Full model + onboarding guid
 ```
 actions/                       reusable composite actions  (→ actions/README.md)
   aws-static-site/               build → s3 sync → CloudFront invalidate
-clients/                        one <name>.yaml per client  (→ clients/README.md)
+clients/                        field reference + example   (→ clients/README.md;
+                                 real files: private clients repo)
 infra/                          provisioning catalog        (→ infra/README.md)
   sites/aws/                     shared root: builds any AWS client from its file
   modules/aws/                   static_site · acm_certificate · github_oidc
                                  · static_site_stack (the bundle recipe)
   access/                        trust foundation a client applies once
-.github/workflows/
-  provision-client-aws.yml       per-client plan/apply, gated by its approval
+.github/workflows/              reusable (workflow_call); the clients repo calls them
+  provision-client-aws.yml       per-client plan/apply
   (+ set-ci-environment / teardown / unlock-client-state)
 ```
 
@@ -92,8 +93,9 @@ infra/                          provisioning catalog        (→ infra/README.md
 
 1. The client runs `aws-grant-access` once in their account (their creds) and
    sends you their account id. Everything after is keyless OIDC.
-2. Add `clients/<name>.yaml` and merge (that sets up its CI environment), then
-   run **Provision Client's AWS Setup** (it plans every client) and approve.
+2. Add `clients/<name>.yaml` in the private clients repo and merge (that sets up
+   its CI environment), then run **Provision Client's AWS Setup** there (it plans
+   every client).
 3. Add the deploy workflow (snippet above) with their name + account id.
    Push → live in under a minute.
 

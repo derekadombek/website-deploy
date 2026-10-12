@@ -1,5 +1,10 @@
 # Clients
 
+Real client files live in the private clients repo (`derekadombek/website-deploy-clients`),
+not here: its workflows call this package's, and their run logs hold client details. This
+folder keeps the field reference and [`example-client.yaml`](example-client.yaml). Locally,
+point the scripts at the real ones with `CLIENTS_DIR=~/repos/website-deploy-clients/clients`.
+
 One file per client: `clients/<name>.yaml`. **The filename is the client name** —
 it's also the GitHub Environment name, the Terraform role trust
 (`environment:<name>`), and the prefix for every resource (`<name>-site-<acct>`,
