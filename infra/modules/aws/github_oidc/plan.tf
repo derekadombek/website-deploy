@@ -23,7 +23,7 @@ data "aws_iam_policy_document" "plan_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.mgmt_github_repo}:ref:refs/heads/main"]
+      values   = [for p in local.mgmt_sub_prefixes : "${p}:ref:refs/heads/main"]
     }
   }
 }
