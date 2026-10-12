@@ -12,18 +12,38 @@ name: Set CI Environment
 # AUTH: the default GITHUB_TOKEN CANNOT manage environments or Actions variables
 # (those need repo-admin permissions it can't be granted, even in this repo). So
 # this workflow uses a PAT supplied as the `REGISTER_CI_TOKEN` secret.
-#   Create a fine-grained PAT scoped to derekadombek/website-deploy with:
+#   Create a fine-grained PAT scoped to the repo that runs it (this one, or the
+#   private clients repo that calls it) with:
 #     - Environments: Read and write
 #     - Variables:    Read and write
-#   then add it as the repo secret REGISTER_CI_TOKEN.
+#   then add it as that repo's secret REGISTER_CI_TOKEN.
 on:
   push:
     branches: [main]
     paths: ["clients/**"]
   workflow_dispatch: {}
+  workflow_call:
+    inputs:
+      package_ref:
+        description: website-deploy ref to run (the same tag/sha as in your `uses:` line).
+        type: string
+        required: true
+    secrets:
+      REGISTER_CI_TOKEN:
+        required: true
 
 permissions:
   contents: read
+
+# Callable from a private clients repo (workflow_call): its clients/ is checked out
+# at the workspace root, this package at package_ref into pkg/. Run directly here,
+# both come from this repo.
+env:
+  CLIENTS_DIR: ${{ github.workspace }}/clients
+
+defaults:
+  run:
+    working-directory: pkg
 
 concurrency:
   group: set-ci-environment
@@ -34,12 +54,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Restrict to owner
+        working-directory: . # before checkout: pkg/ isn't there yet
         if: github.event_name == 'workflow_dispatch' && github.actor != 'derekadombek'
         run: |
           echo "Only the repo owner may run this workflow (actor: ${{ github.actor }})." >&2
           exit 1
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4 # client files: clients/ in the calling repo (or this one)
+        with:
+          sparse-checkout: clients
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref (or this run's commit)
+        with:
+          repository: derekadombek/website-deploy
+          ref: ${{ inputs.package_ref || github.sha }}
+          path: pkg
 
       - name: Sync environments from clients/
         env:

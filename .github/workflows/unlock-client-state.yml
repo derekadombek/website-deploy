@@ -16,13 +16,35 @@ on:
       lock_id:
         description: Lock ID from the error ("Lock Info → ID").
         required: true
+  workflow_call:
+    inputs:
+      package_ref:
+        description: website-deploy ref to run (the same tag/sha as in your `uses:` line).
+        type: string
+        required: true
+      client:
+        description: Client name (clients/<name>.yaml).
+        type: string
+        required: true
+      lock_id:
+        description: Lock ID from the error ("Lock Info → ID").
+        type: string
+        required: true
 
 permissions:
   id-token: write # OIDC token to assume the AWS role
   contents: read
 
+# Callable from a private clients repo (workflow_call): its clients/ is checked out
+# at the workspace root, this package at package_ref into pkg/. Run directly here,
+# both come from this repo.
 env:
+  CLIENTS_DIR: ${{ github.workspace }}/clients
   TERRAFORM_VERSION: "1.16.5" # keep in sync with .terraform-version
+
+defaults:
+  run:
+    working-directory: pkg
 
 concurrency:
   group: terraform # shared with Provision + Teardown (all branches): never unlock mid-run
@@ -33,11 +55,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Restrict to owner
+        working-directory: . # before checkout: pkg/ isn't there yet
         if: github.actor != 'derekadombek'
         run: |
           echo "Only the repo owner may run this workflow (actor: ${{ github.actor }})." >&2
           exit 1
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4 # client files: clients/ in the calling repo (or this one)
+        with:
+          sparse-checkout: clients
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref (or this run's commit)
+        with:
+          repository: derekadombek/website-deploy
+          ref: ${{ inputs.package_ref || github.sha }}
+          path: pkg
       - name: Check client file + lock id
         env:
           CLIENT: ${{ inputs.client }}
@@ -52,7 +82,14 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.client }} # approval gate + scoped AWS_TF_ROLE_ARN/AWS_REGION
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4 # client files: clients/ in the calling repo (or this one)
+        with:
+          sparse-checkout: clients
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref (or this run's commit)
+        with:
+          repository: derekadombek/website-deploy
+          ref: ${{ inputs.package_ref || github.sha }}
+          path: pkg
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
