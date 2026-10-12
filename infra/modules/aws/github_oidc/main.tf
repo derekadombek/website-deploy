@@ -107,6 +107,20 @@ resource "aws_iam_role_policy" "deploy" {
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
 
+# Subject prefixes the management repo's tokens can carry: the classic
+# repo:owner/name, plus GitHub's immutable repo:owner@<id>/name@<id> (newer repos
+# use it) when the ids are known.
+locals {
+  mgmt_known_ids = { "derekadombek/website-deploy-clients" = "50093944/1416158874" }
+  mgmt_ids       = var.mgmt_github_repo_ids != "" ? var.mgmt_github_repo_ids : lookup(local.mgmt_known_ids, var.mgmt_github_repo, "")
+  mgmt_sub_prefixes = concat(
+    ["repo:${var.mgmt_github_repo}"],
+    local.mgmt_ids != "" ? [
+      "repo:${split("/", var.mgmt_github_repo)[0]}@${split("/", local.mgmt_ids)[0]}/${split("/", var.mgmt_github_repo)[1]}@${split("/", local.mgmt_ids)[1]}"
+    ] : [],
+  )
+}
+
 data "aws_iam_policy_document" "terraform_assume" {
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
@@ -126,7 +140,7 @@ data "aws_iam_policy_document" "terraform_assume" {
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.mgmt_github_repo}:environment:${var.mgmt_environment}"]
+      values   = [for p in local.mgmt_sub_prefixes : "${p}:environment:${var.mgmt_environment}"]
     }
   }
 }

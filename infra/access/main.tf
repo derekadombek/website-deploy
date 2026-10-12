@@ -25,6 +25,7 @@ module "github_oidc" {
   deploy_github_repo_id       = var.deploy_github_repo_id
   github_branch               = var.github_branch
   mgmt_github_repo            = var.mgmt_github_repo
+  mgmt_github_repo_ids        = var.mgmt_github_repo_ids
   mgmt_environment            = var.mgmt_environment
   create_oidc_provider        = var.create_oidc_provider
 

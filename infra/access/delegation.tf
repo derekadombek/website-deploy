@@ -38,7 +38,7 @@ data "aws_iam_policy_document" "dns_delegation_assume" {
     condition {
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.mgmt_github_repo}:environment:*"]
+      values   = [for p in module.github_oidc.mgmt_sub_prefixes : "${p}:environment:*"]
     }
   }
 }
