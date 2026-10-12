@@ -58,3 +58,15 @@ variable "tf_lock_table" {
   description = "Name of the DynamoDB table used for Terraform state locking."
   type        = string
 }
+
+variable "deploy_github_repo_owner_id" {
+  description = "Numeric GitHub id of the app repo's owner — with deploy_github_repo_id, also trusts GitHub's immutable subject format. Empty = classic format only."
+  type        = string
+  default     = ""
+}
+
+variable "deploy_github_repo_id" {
+  description = "Numeric GitHub id of the app repo (see deploy_github_repo_owner_id)."
+  type        = string
+  default     = ""
+}

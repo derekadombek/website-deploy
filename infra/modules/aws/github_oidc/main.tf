@@ -37,10 +37,19 @@ data "aws_iam_policy_document" "assume" {
 
     # Deploy role trusts the APP repo, branch-scoped. Pair with branch
     # protection on that branch. Deploys are frequent + low-privilege.
+    # Accepts both GitHub subject formats: the classic owner/name one, and —
+    # when the repo's numeric ids are known — the immutable one GitHub uses for
+    # newer repos (owner@<id>/name@<id>), which also survives a repo being
+    # deleted and re-created under the same name.
     condition {
       test     = "StringEquals"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:${var.deploy_github_repo}:ref:refs/heads/${var.github_branch}"]
+      values = concat(
+        ["repo:${var.deploy_github_repo}:ref:refs/heads/${var.github_branch}"],
+        var.deploy_github_repo_owner_id != "" && var.deploy_github_repo_id != "" ? [
+          "repo:${split("/", var.deploy_github_repo)[0]}@${var.deploy_github_repo_owner_id}/${split("/", var.deploy_github_repo)[1]}@${var.deploy_github_repo_id}:ref:refs/heads/${var.github_branch}"
+        ] : [],
+      )
     }
   }
 }
