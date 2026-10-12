@@ -19,7 +19,7 @@ variable "github_branch" {
 variable "mgmt_github_repo" {
   description = "Management repo allowed to run Terraform, in 'owner/name' form. Environment-scoped."
   type        = string
-  default     = "derekadombek/website-deploy"
+  default     = "derekadombek/website-deploy-clients"
 }
 
 variable "mgmt_environment" {
