@@ -44,16 +44,16 @@ Every account holds a GitHub **OIDC provider** + two roles:
 - **Deploy role** — trusts the **app repo**, branch-scoped
   (`repo:<app>:ref:refs/heads/<branch>`); can only `s3 sync` + invalidate. Pair
   with branch protection on the app repo.
-- **Terraform role** — trusts **this management repo** scoped to a GitHub
-  **Environment** (`repo:derekadombek/website-deploy:environment:<env>`), *not* a
-  branch; manages the site + that account's state. Standing but **inert**: the
+- **Terraform role** — trusts the **management repo** (the private clients repo,
+  whose workflows call this package's) scoped to a GitHub **Environment**
+  (`repo:derekadombek/website-deploy-clients:environment:<env>`), *not* a branch; manages the site + that account's state. Standing but **inert**: the
   only token that satisfies its trust is one minted for a job that declared that
   environment, and the environment has required reviewers — so nothing runs
   without a human approval.
 
 ```
 DEPLOY (everyday):  app repo push → OIDC → deploy role (target acct) → sync + invalidate
-MANAGE (on demand): website-deploy workflow → approve env → OIDC → terraform role → apply
+MANAGE (on demand): clients-repo workflow → approve env → OIDC → terraform role → apply
 ```
 
 Keep the two trust targets distinct — collapsing them would let deploys and
@@ -151,7 +151,7 @@ AWS_PROFILE=derek infra/scripts/grant-access.sh --project portfolio --region us-
   --delegation-zone derekadombek.com
 ```
 
-It trusts any GitHub Environment job in this repo (all have required reviewers)
+It trusts any GitHub Environment job in the management repo (all have required reviewers)
 and can **only** create/delete NS records for subdomains in that one zone — never
 the apex. Always pass `--delegation-zone` when re-running portfolio's access
 step, or the role is removed.

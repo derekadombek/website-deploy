@@ -1,7 +1,7 @@
 name: AWS grant access
 description: >-
-  Stand up the trust foundation in this AWS account so derekadombek/website-deploy
-  can manage it over OIDC — creates the Terraform state backend + GitHub OIDC
+  Stand up the trust foundation in this AWS account so the management repo
+  (derekadombek/website-deploy-clients) can manage it over OIDC — creates the Terraform state backend + GitHub OIDC
   provider + deploy role + management role. A CLIENT runs this once in their own
   repo with their own privileged credentials; nothing is handed over, and from
   then on management is keyless via OIDC.
@@ -31,9 +31,9 @@ inputs:
     description: DynamoDB lock table to create.
     required: true
   mgmt-github-repo:
-    description: Management repo allowed to run Terraform.
+    description: Management repo allowed to run Terraform (the private clients repo).
     required: false
-    default: derekadombek/website-deploy
+    default: derekadombek/website-deploy-clients
   github-branch:
     description: Branch of the app repo allowed to deploy.
     required: false

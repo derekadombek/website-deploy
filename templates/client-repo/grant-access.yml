@@ -3,7 +3,7 @@ name: Grant AWS access (one-time onboarding)
 # Copy into the client's app repo as .github/workflows/grant-access.yml.
 #
 # Stands up the trust foundation in the client's AWS account so
-# derekadombek/website-deploy can manage it over OIDC: creates the Terraform
+# Derek's management repo can manage it over OIDC: creates the Terraform
 # state backend + GitHub OIDC provider + deploy role + management role. Run it
 # ONCE; after that everything is keyless and this workflow never needs to run
 # again (re-running is a safe no-op).
@@ -20,7 +20,7 @@ on:
   workflow_dispatch:
     inputs:
       client-name:
-        description: Client name — must match clients/<name>.yaml in website-deploy
+        description: Client name — must match the client file Derek adds (clients/<name>.yaml)
         required: true
       aws-region:
         description: AWS region for the state + site buckets
