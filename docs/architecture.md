@@ -42,8 +42,8 @@ A visitor hits the site (e.g. `https://derekadombek.com`):
   bootstrap creates it (see [`../infra/README.md`](../infra/README.md)).
 - **CI is fully wired.** `provision-client-aws.yml` is dispatched manually per client
   (validate → plan → apply) behind that env's GitHub Environment approval;
-  `teardown-client-aws.yml` destroys, and `provision-client-external-domain.yml`
-  handles external-registrar DNS delegation.
+  it also creates and delegates the DNS zone from the client file (automatically
+  for subdomains of another client's zone), and `teardown-client-aws.yml` destroys.
 - **Phase 2 (deferred):** automate per-client onboarding — wrap the one-time
   bootstrap and push the four deploy Variables from `terraform output` via `gh`.
 - A natural follow-on demo: add automated backups and uptime monitoring on top of

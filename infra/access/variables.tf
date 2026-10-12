@@ -45,3 +45,9 @@ variable "create_oidc_provider" {
   type        = bool
   default     = true
 }
+
+variable "delegation_zone_name" {
+  description = "Route 53 zone in this account whose subdomains other clients may delegate to themselves (e.g. derekadombek.com). Empty = no delegation role."
+  type        = string
+  default     = ""
+}
