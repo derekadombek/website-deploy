@@ -18,7 +18,7 @@ description: >-
 
 inputs:
   client-name:
-    description: Client name (clients/<name>.yaml in website-deploy). Use with aws-account-id.
+    description: Client name (its clients/<name>.yaml in the clients repo). Use with aws-account-id.
     required: false
     default: ""
   aws-account-id:

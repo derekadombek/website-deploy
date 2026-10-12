@@ -23,7 +23,6 @@ name: Provision Client's AWS Setup
 #     the 4 nameservers in the run summary, and WAITS (up to 1h) while you paste
 #     them at the registrar; then applies. No second approval needed.
 on:
-  workflow_dispatch: {}
   workflow_call:
     inputs:
       package_ref:
@@ -36,9 +35,9 @@ permissions:
   contents: read
   actions: read # list the repo's environments (needed when the repo is private)
 
-# Callable from a private clients repo (workflow_call): its clients/ is checked out
-# at the workspace root, this package at package_ref into pkg/. Run directly here,
-# both come from this repo.
+# Called from the private clients repo (workflow_call) — it isn't run here. Its
+# clients/ is checked out at the workspace root, this package at package_ref
+# into pkg/.
 env:
   CLIENTS_DIR: ${{ github.workspace }}/clients
   # One Terraform version everywhere — keep in sync with .terraform-version (the
@@ -70,13 +69,13 @@ jobs:
         run: |
           echo "::error::Run Provision from main — the read-only plan roles only trust main."
           exit 1
-      - uses: actions/checkout@v4 # client files: clients/ in the calling repo (or this one)
+      - uses: actions/checkout@v4 # client files: clients/ in the calling repo
         with:
           sparse-checkout: clients
-      - uses: actions/checkout@v4 # the package, at the caller's pinned ref (or this run's commit)
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref
         with:
           repository: derekadombek/website-deploy
-          ref: ${{ inputs.package_ref || github.sha }}
+          ref: ${{ inputs.package_ref }}
           path: pkg
       - name: List clients
         id: scope
@@ -106,13 +105,13 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.setup.outputs.all_matrix) }}
     steps:
-      - uses: actions/checkout@v4 # client files: clients/ in the calling repo (or this one)
+      - uses: actions/checkout@v4 # client files: clients/ in the calling repo
         with:
           sparse-checkout: clients
-      - uses: actions/checkout@v4 # the package, at the caller's pinned ref (or this run's commit)
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref
         with:
           repository: derekadombek/website-deploy
-          ref: ${{ inputs.package_ref || github.sha }}
+          ref: ${{ inputs.package_ref }}
           path: pkg
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -141,13 +140,13 @@ jobs:
     env:
       CLIENT: ${{ matrix.env }}
     steps:
-      - uses: actions/checkout@v4 # client files: clients/ in the calling repo (or this one)
+      - uses: actions/checkout@v4 # client files: clients/ in the calling repo
         with:
           sparse-checkout: clients
-      - uses: actions/checkout@v4 # the package, at the caller's pinned ref (or this run's commit)
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref
         with:
           repository: derekadombek/website-deploy
-          ref: ${{ inputs.package_ref || github.sha }}
+          ref: ${{ inputs.package_ref }}
           path: pkg
       - uses: hashicorp/setup-terraform@v3
         with:
@@ -231,13 +230,13 @@ jobs:
     env:
       CLIENT: ${{ matrix.env }}
     steps:
-      - uses: actions/checkout@v4 # client files: clients/ in the calling repo (or this one)
+      - uses: actions/checkout@v4 # client files: clients/ in the calling repo
         with:
           sparse-checkout: clients
-      - uses: actions/checkout@v4 # the package, at the caller's pinned ref (or this run's commit)
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref
         with:
           repository: derekadombek/website-deploy
-          ref: ${{ inputs.package_ref || github.sha }}
+          ref: ${{ inputs.package_ref }}
           path: pkg
       - uses: hashicorp/setup-terraform@v3
         with:

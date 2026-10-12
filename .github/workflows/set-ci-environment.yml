@@ -4,24 +4,20 @@ name: Set CI Environment
 # client it creates/updates the GitHub Environment (named the same as the
 # client), sets its scoped AWS_TF_ROLE_ARN + AWS_REGION variables (derived from
 # the client file), and adds you as required reviewer. Clients with `ci: false`
-# are skipped. Idempotent: runs automatically when clients/ changes on main, and
-# you can run it by hand any time.
+# are skipped. Idempotent: the clients repo runs it when clients/ changes on main,
+# and by hand.
 #
 # It never removes an environment — delete one by hand after removing a client.
 #
 # AUTH: the default GITHUB_TOKEN CANNOT manage environments or Actions variables
 # (those need repo-admin permissions it can't be granted, even in this repo). So
 # this workflow uses a PAT supplied as the `REGISTER_CI_TOKEN` secret.
-#   Create a fine-grained PAT scoped to the repo that runs it (this one, or the
-#   private clients repo that calls it) with:
-#     - Environments: Read and write
-#     - Variables:    Read and write
+#   Create a fine-grained PAT scoped to the clients repo that calls it with:
+#     - Administration: Read and write (creating an environment needs it)
+#     - Environments:   Read and write
+#     - Variables:      Read and write
 #   then add it as that repo's secret REGISTER_CI_TOKEN.
 on:
-  push:
-    branches: [main]
-    paths: ["clients/**"]
-  workflow_dispatch: {}
   workflow_call:
     inputs:
       package_ref:
@@ -35,9 +31,9 @@ on:
 permissions:
   contents: read
 
-# Callable from a private clients repo (workflow_call): its clients/ is checked out
-# at the workspace root, this package at package_ref into pkg/. Run directly here,
-# both come from this repo.
+# Called from the private clients repo (workflow_call) — it isn't run here. Its
+# clients/ is checked out at the workspace root, this package at package_ref
+# into pkg/.
 env:
   CLIENTS_DIR: ${{ github.workspace }}/clients
 
@@ -60,13 +56,13 @@ jobs:
           echo "Only the repo owner may run this workflow (actor: ${{ github.actor }})." >&2
           exit 1
 
-      - uses: actions/checkout@v4 # client files: clients/ in the calling repo (or this one)
+      - uses: actions/checkout@v4 # client files: clients/ in the calling repo
         with:
           sparse-checkout: clients
-      - uses: actions/checkout@v4 # the package, at the caller's pinned ref (or this run's commit)
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref
         with:
           repository: derekadombek/website-deploy
-          ref: ${{ inputs.package_ref || github.sha }}
+          ref: ${{ inputs.package_ref }}
           path: pkg
 
       - name: Sync environments from clients/

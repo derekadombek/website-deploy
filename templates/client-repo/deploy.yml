@@ -27,7 +27,7 @@ jobs:
 
       - uses: derekadombek/website-deploy/actions/aws-static-site@v1
         with:
-          client-name: CHANGE-ME # = clients/<name>.yaml in website-deploy
+          client-name: CHANGE-ME # = the client file name (clients/<name>.yaml)
           aws-account-id: "CHANGE-ME" # 12 digits, quoted
           aws-region: us-west-2
           source-dir: site # folder that holds the built site (e.g. dist)
