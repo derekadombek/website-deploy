@@ -9,8 +9,13 @@
 #   create-zone  (CI phase 1) — create JUST the hosted zone and print its
 #                nameservers, then stop. No waiting. You then set those NS at the
 #                external registrar.
-#   finish       (CI phase 2, after you've delegated + resumed) — poll until the
-#                delegation is live, then full apply.
+#   finish       (CI phase 2) — poll until the delegation is live, then full
+#                apply.
+#
+# Delegation: a client with `delegate_from: <parent>` gets its NS record written
+# into the parent's zone (delegate-ns.sh) — by the Provision workflow in CI, or
+# here in `all` when DELEGATE_PROFILE names a profile for the parent's account.
+# Otherwise you paste the nameservers at the registrar while this waits.
 #
 # For an existing-zone env, or one with registrar_in_route53 = true, there's
 # nothing to delegate — it just applies.
@@ -113,10 +118,13 @@ case "${PHASE}" in
     create_zone
     if has_zone; then
       print_ns
-      echo "==> Next: set those NS at the external registrar, then resume (phase finish)."
+      if [ -n "$(client_get "${ENV_NAME}" delegate_from)" ]; then
+        echo "==> delegate_from is set — the NS record is added in $(client_parent_zone "${ENV_NAME}") automatically."
+      else
+        echo "==> Set those NS at the registrar now — the apply waits (up to 1h) for them to go live."
+      fi
     else
-      echo "==> no zone to delegate (existing zone, or registrar_in_route53/auto)."
-      echo "    Nothing to delegate — just run the normal Terraform workflow to apply."
+      echo "==> no zone to delegate (no domain, existing zone, or registrar_in_route53)."
     fi
     ;;
   finish)
@@ -126,7 +134,14 @@ case "${PHASE}" in
   all)
     confirm_fresh_or_refuse
     create_zone
-    if has_zone; then print_ns; wait_for_delegation; fi
+    if has_zone; then
+      print_ns
+      if [ -n "$(client_get "${ENV_NAME}" delegate_from)" ] && [ -n "${DELEGATE_PROFILE:-}" ]; then
+        AWS_PROFILE="${DELEGATE_PROFILE}" "${LIB_DIR}/../delegate-ns.sh" upsert "${ENV_NAME}" \
+          $(zone_ns_json | tr -d '[:space:]' | tr ',' '\n' | sed 's/[]["]//g' | grep .)
+      fi
+      wait_for_delegation
+    fi
     full_apply
     ;;
   *)
