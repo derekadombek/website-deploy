@@ -7,6 +7,9 @@ it's also the GitHub Environment name, the Terraform role trust
 
 Adding a client = adding this file. Changing their domain = editing it.
 
+The files can also live outside this repo: set `CLIENTS_DIR` to their folder and
+the scripts (and Terraform, via `infra/scripts/tf.sh`) read them from there.
+
 Keep it **flat `key: value`** (no nesting) — the scripts read it with plain shell.
 
 ```yaml

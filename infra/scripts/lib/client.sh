@@ -1,15 +1,22 @@
 # Shared helpers for reading clients/<name>.yaml and pointing Terraform at that
 # client's state. Source it; don't run it.
 #
+# CLIENTS_DIR picks the folder the client files live in (default: clients/ in
+# this repo), so they can sit in a separate private repo.
+#
 # Client files are flat `key: value` YAML, so plain sed reads them — no yq.
 
 LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${LIB_DIR}/../../.." && pwd)"
+_dir="${CLIENTS_DIR:-${REPO_ROOT}/clients}"
+CLIENTS_DIR="$(cd "${_dir}" 2>/dev/null && pwd)" || { echo "CLIENTS_DIR not found: ${_dir}" >&2; return 1; }
+unset _dir
+export CLIENTS_DIR
 
 # client_get <name> <key> [default] — print a field (quotes + trailing comment stripped).
 client_get() {
   local v
-  v="$(sed -n "s/^$2:[[:space:]]*//p" "${REPO_ROOT}/clients/$1.yaml" | head -1 |
+  v="$(sed -n "s/^$2:[[:space:]]*//p" "${CLIENTS_DIR}/$1.yaml" | head -1 |
     sed -e 's/[[:space:]]#.*$//' -e 's/[[:space:]]*$//' -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/")"
   printf '%s' "${v:-${3:-}}"
 }
@@ -17,7 +24,7 @@ client_get() {
 # client_list [provider] — every client name (optionally only one provider's).
 client_list() {
   local f n
-  for f in "${REPO_ROOT}"/clients/*.yaml; do
+  for f in "${CLIENTS_DIR}"/*.yaml; do
     n="$(basename "${f}" .yaml)"
     if [ -z "${1:-}" ] || [ "$(client_get "${n}" provider)" = "$1" ]; then echo "${n}"; fi
   done
@@ -26,7 +33,7 @@ client_list() {
 
 # client_check <name> — fail with a readable message if the file is missing or wrong.
 client_check() {
-  local name="$1" f="${REPO_ROOT}/clients/$1.yaml" errs=""
+  local name="$1" f="${CLIENTS_DIR}/$1.yaml" errs=""
   [ -f "${f}" ] || { echo "no client file: clients/${name}.yaml (have: $(client_list | tr '\n' ' '))" >&2; return 1; }
   echo "${name}" | grep -qE '^[a-z0-9][a-z0-9-]*$' || errs+="  name must be lowercase letters, digits, dashes\n"
 
@@ -47,7 +54,7 @@ client_check() {
     local parent; parent="$(client_get "${name}" delegate_from)"
     if [ -n "${parent}" ]; then
       local pzone; pzone="$(client_parent_zone "${name}")"
-      [ -f "${REPO_ROOT}/clients/${parent}.yaml" ] || errs+="  delegate_from: no client file clients/${parent}.yaml\n"
+      [ -f "${CLIENTS_DIR}/${parent}.yaml" ] || errs+="  delegate_from: no client file clients/${parent}.yaml\n"
       [ "$(client_get "${name}" dns)" = "external" ] || errs+="  delegate_from needs dns: external (the zone is created here, delegated from ${parent})\n"
       case "$(client_get "${name}" hosted_zone "$(client_get "${name}" domain)")" in
         *."${pzone}") ;;
@@ -70,6 +77,7 @@ client_tf_init() {
   cd "${REPO_ROOT}/infra/sites/${provider}"
   export TF_DATA_DIR=".terraform-${name}"
   export TF_VAR_client="${name}"
+  export TF_VAR_clients_dir="${CLIENTS_DIR}"
 
   if [ "${1:-}" = "-backend=false" ]; then
     # Separate data dir: a dir that's already been inited against real state
@@ -100,7 +108,7 @@ client_deploy_role_arn() { echo "arn:aws:iam::$(client_get "$1" account_id):role
 # role (infra/access, delegation_zone_name) that's allowed to write it.
 client_parent_zone() {
   local parent; parent="$(client_get "$1" delegate_from)"
-  [ -n "${parent}" ] && [ -f "${REPO_ROOT}/clients/${parent}.yaml" ] || return 0
+  [ -n "${parent}" ] && [ -f "${CLIENTS_DIR}/${parent}.yaml" ] || return 0
   client_get "${parent}" hosted_zone "$(client_get "${parent}" domain)"
 }
 client_delegation_role_arn() {
