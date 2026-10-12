@@ -26,10 +26,6 @@ on:
       client:
         description: Client name (clients/<name>.yaml), or "all".
         required: true
-      confirm_fresh:
-        description: First-ever provision of this ONE client (empty state)? Not allowed with "all".
-        type: boolean
-        default: false
 
 permissions:
   id-token: write # OIDC token to assume the AWS role
@@ -55,17 +51,9 @@ jobs:
         id: scope
         env:
           SELECTION: ${{ inputs.client }}
-          CONFIRM_FRESH: ${{ inputs.confirm_fresh }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-
-          # confirm_fresh bypasses the empty-state guard — only ever for ONE named
-          # client, never across "all".
-          if [ "$CONFIRM_FRESH" = "true" ] && { [ -z "$SELECTION" ] || [ "$SELECTION" = "all" ]; }; then
-            echo "::error::confirm_fresh only works with a single client name, not \"all\"."
-            exit 1
-          fi
 
           # All AWS clients (for validate).
           source infra/scripts/lib/client.sh
@@ -183,8 +171,6 @@ jobs:
 
       - name: Create DNS zone (if this client gets one)
         id: zone
-        env:
-          CONFIRM_FRESH: ${{ inputs.confirm_fresh }}
         run: |
           infra/scripts/onboard-site.sh --phase create-zone "$CLIENT" | tee -a "$GITHUB_STEP_SUMMARY"
           ns=$(infra/scripts/tf.sh "$CLIENT" output -json hosted_zone_name_servers | jq -r '.[]' | tr '\n' ' ')
