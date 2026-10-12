@@ -3,7 +3,7 @@ name: Set CI Environment
 # Syncs GitHub Environments from clients/*.yaml — no inputs. For every AWS
 # client it creates/updates the GitHub Environment (named the same as the
 # client), sets its scoped AWS_TF_ROLE_ARN + AWS_REGION variables (derived from
-# the client file), and adds you as required reviewer. Clients with `ci: false`
+# the client file), and adds you as required reviewer where the plan allows it. Clients with `ci: false`
 # are skipped. Idempotent: the clients repo runs it when clients/ changes on main,
 # and by hand.
 #

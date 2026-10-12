@@ -3,8 +3,8 @@
 # bob.derekadombek.com from derekadombek.com). Only created when
 # delegation_zone_name is set.
 #
-# Trust: any GitHub Environment job in the management repo. Every environment
-# there has required reviewers, so a token only exists after an approval.
+# Trust: any GitHub Environment job in the management repo (only its writers
+# can add one).
 # Permissions are deliberately tiny: NS records only, in this one zone, never the
 # zone apex — the worst it can do is point a subdomain somewhere else.
 

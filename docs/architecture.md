@@ -24,10 +24,11 @@ A visitor hits the site (e.g. `https://derekadombek.com`):
   stored in the repo to leak or rotate.
 - **Least-privilege deploy role.** The CI role can only write to *this* bucket and
   invalidate *this* distribution — nothing else in the account.
-- **Two trust targets, one human gate.** The deploy role trusts the app repo
-  (branch-scoped) and runs on every push. The broad Terraform role trusts *this*
-  management repo scoped to a GitHub Environment with required reviewers, so it is
-  inert until a human approves — even though it stands permanently.
+- **Two trust targets, plan before apply.** The deploy role trusts the app repo
+  (branch-scoped) and runs on every push. The broad Terraform role trusts only the
+  private management repo, scoped to the client's GitHub Environment; a separate
+  read-only plan role lets Provision show every plan, and it applies only when you
+  run it again with *apply* ticked.
 - **Per-account isolation.** GitHub OIDC federates directly into each account; there
   is no central ops account or `assume_role` chain. Each client's state, account, and
   trust come from its own `clients/<name>.yaml`, so accounts never share anything.
@@ -40,8 +41,8 @@ A visitor hits the site (e.g. `https://derekadombek.com`):
 - **Remote state, per account.** Each client keeps its own S3 +
   DynamoDB backend in its own account — no shared state bucket. The one-time
   bootstrap creates it (see [`../infra/README.md`](../infra/README.md)).
-- **CI is fully wired.** `provision-client-aws.yml` is dispatched manually per client
-  (validate → plan → apply) behind that env's GitHub Environment approval;
+- **CI is fully wired.** `provision-client-aws.yml` is dispatched manually from the
+  clients repo (validate → plan; apply only when ticked);
   it also creates and delegates the DNS zone from the client file (automatically
   for subdomains of another client's zone), and `teardown-client-aws.yml` destroys.
 - **Phase 2 (deferred):** automate per-client onboarding — wrap the one-time

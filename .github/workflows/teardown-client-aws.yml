@@ -4,8 +4,8 @@ name: Teardown Client's AWS Setup
 # any DNS/ACM). Use to spin a site down between tests so it stops billing.
 #
 # Guardrails: manual only, owner-only, you must retype the env name to confirm,
-# and it runs in the client's GitHub Environment so it waits for the same approval
-# as an apply. It destroys ONLY the site — the access config (OIDC provider +
+# and it runs in the client's GitHub Environment (which also waits for an
+# approval if the environment has required reviewers). It destroys ONLY the site — the access config (OIDC provider +
 # deploy/Terraform roles + state backend) is a separate state and is left intact,
 # so you can re-provision the site again later with a plain Terraform dispatch.
 on:
@@ -68,7 +68,7 @@ jobs:
   destroy:
     needs: check
     runs-on: ubuntu-latest
-    environment: ${{ inputs.client }} # approval gate + scoped AWS_TF_ROLE_ARN/AWS_REGION
+    environment: ${{ inputs.client }} # scoped AWS_TF_ROLE_ARN/AWS_REGION (+ approval, if it has reviewers)
     steps:
       - name: Guard — owner + confirmation
         working-directory: . # before checkout: pkg/ isn't there yet

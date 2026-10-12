@@ -31,9 +31,8 @@ variable "mgmt_github_repo_ids" {
 variable "mgmt_environment" {
   description = <<-EOT
     GitHub Environment (in the management repo) the Terraform role's trust is
-    scoped to. The provisioning workflow job declares this environment, which
-    has required reviewers — so the broad Terraform role is unusable until a
-    human approves, even though it stands permanently.
+    scoped to. Only a job in the management repo that declares this
+    environment can get the broad Terraform role.
   EOT
   type        = string
   default     = "provisioning"

@@ -47,14 +47,17 @@ Every account holds a GitHub **OIDC provider** + two roles:
   with branch protection on the app repo.
 - **Terraform role** — trusts the **management repo** (the private clients repo,
   whose workflows call this package's) scoped to a GitHub **Environment**
-  (`repo:derekadombek/website-deploy-clients:environment:<env>`), *not* a branch; manages the site + that account's state. Standing but **inert**: the
-  only token that satisfies its trust is one minted for a job that declared that
-  environment, and the environment has required reviewers — so nothing runs
-  without a human approval.
+  (`repo:derekadombek/website-deploy-clients:environment:<env>`), *not* a branch;
+  manages the site + that account's state. The only token that satisfies its
+  trust is one minted for a job in the clients repo that declared that
+  environment — and only you can write to that repo. Provision plans only unless
+  you tick *apply*, so nothing changes before you've read the plan. (Required
+  reviewers on the environment would add an approval, but private repos only get
+  them on GitHub Enterprise.)
 
 ```
 DEPLOY (everyday):  app repo push → OIDC → deploy role (target acct) → sync + invalidate
-MANAGE (on demand): clients-repo workflow → approve env → OIDC → terraform role → apply
+MANAGE (on demand): clients-repo Provision (plan) → read → Provision (apply) → OIDC → terraform role
 ```
 
 Keep the two trust targets distinct — collapsing them would let deploys and
@@ -83,11 +86,11 @@ are no ARNs to copy between steps.
 2. **Add `clients/<name>.yaml`** in the private clients repo (fields:
    [`clients/README.md`](../clients/README.md)) — PR, merge. Merging runs **Set CI Environment** automatically: it creates the
    client's GitHub Environment with `AWS_TF_ROLE_ARN` (built from the account id)
-   + `AWS_REGION` + you as reviewer.
-3. **Provision** — run **Provision Client's AWS Setup** from the clients repo's `main` (no inputs).
-   It plans **every** client without asking (read-only), then waits for one
-   approval covering every client whose plan has changes — read the plans in
-   the run summary, then in *Review deployments* tick them all and approve. It
+   + `AWS_REGION` (+ you as reviewer, where the GitHub plan allows it).
+3. **Provision** — run **Provision Client's AWS Setup** from the clients repo's `main`.
+   By default it only plans **every** client (read-only) and lists the ones with
+   changes. Read those plans in the run summary, then run it again with **apply**
+   ticked; that applies every client whose plan has changes. It
    handles every DNS case from the client file — see *DNS* below. For an outside
    registrar it prints 4 nameservers in the run summary and waits while you
    paste them.
@@ -152,7 +155,7 @@ AWS_PROFILE=derek infra/scripts/grant-access.sh --project portfolio --region us-
   --delegation-zone derekadombek.com
 ```
 
-It trusts any GitHub Environment job in the management repo (all have required reviewers)
+It trusts any GitHub Environment job in the management repo
 and can **only** create/delete NS records for subdomains in that one zone — never
 the apex. Always pass `--delegation-zone` when re-running portfolio's access
 step, or the role is removed.
@@ -160,21 +163,22 @@ step, or the role is removed.
 For a client keeping DNS elsewhere entirely (Cloudflare, etc.), leave `domain: ""`
 (ship the CloudFront default domain) and have them CNAME to it.
 
-## GitHub Environments (this repo)
+## GitHub Environments (the clients repo)
 
 CI management is per **GitHub Environment**, one per client, named the same as
 the client. Each holds:
 
 - **scoped variables** `AWS_TF_ROLE_ARN` + `AWS_REGION`,
-- its own **required reviewers** (the approval that mints the env-scoped OIDC token).
+- **required reviewers** where the GitHub plan allows them (private repos: Enterprise
+  only). Set CI adds you when it can and warns when it can't.
 
 Three roles per client account, three trust targets — never collapse them:
 
 | Role | Trusts | Can |
 |---|---|---|
 | `<name>-github-deploy` | the client's app repo, `main` | sync the site + invalidate |
-| `<name>-plan` | the clients repo, `main` (no approval) | **read** the site + state, take the lock |
-| `<name>-terraform` | the clients repo, environment `<name>` (approval) | change the site |
+| `<name>-plan` | the clients repo, `main` | **read** the site + state, take the lock |
+| `<name>-terraform` | the clients repo, environment `<name>` | change the site |
 
 **Set CI Environment** keeps them in sync with `clients/`: the clients repo runs it
 on every merge that touches `clients/` (or by hand, no inputs) and creates/updates an environment

@@ -1,9 +1,9 @@
-# Plan role — READ-ONLY, so `terraform plan` can run without an approval.
+# Plan role — READ-ONLY, so `terraform plan` can run on every Provision.
 #
 # Trusts the management repo's main branch (no GitHub Environment), so the
 # Provision workflow's plan job gets it automatically. It can read the site's
 # resources and its state, take the state lock, and change nothing — the apply
-# still needs the Terraform role, which only an approved environment job gets.
+# still needs the Terraform role, which only an environment job gets.
 data "aws_iam_policy_document" "plan_assume" {
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
