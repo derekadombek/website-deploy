@@ -11,13 +11,25 @@ name: Provision Client's AWS Setup
 # AWS_REGION (scoped variables) and its own required reviewers — the approval is
 # what mints the env-scoped OIDC token the client's Terraform role trusts.
 # Validate-only clients (no environment) are still checked, just never applied.
+#
+# DNS is handled from the client file — one workflow for every case:
+#   - no domain / existing zone / route53-registrar → straight apply.
+#   - dns: external + delegate_from: <parent> → creates the zone, writes the NS
+#     record into the parent client's zone (via its <parent>-dns-delegation
+#     role), then applies. Hands-off.
+#   - dns: external, domain at an outside registrar → creates the zone, prints
+#     the 4 nameservers in the run summary, and WAITS (up to 1h) while you paste
+#     them at the registrar; then applies. No second approval needed.
 on:
   workflow_dispatch:
     inputs:
       client:
         description: Client name (clients/<name>.yaml), or "all".
         required: true
-        default: all
+      confirm_fresh:
+        description: First-ever provision of this client (empty Terraform state)?
+        type: boolean
+        default: false
 
 permissions:
   id-token: write # OIDC token to assume the AWS role
@@ -128,23 +140,66 @@ jobs:
       - name: Plan
         run: infra/scripts/tf.sh "${{ matrix.env }}" plan -no-color -input=false
 
-  # Apply after the plan + approval.
+  # Apply after the plan + approval: zone first, then delegation, then the rest.
   apply:
     needs: [setup, validate, plan]
     if: needs.setup.outputs.has_apply == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 120 # includes up to 1h waiting on an outside registrar
     environment: ${{ matrix.env }}
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix: ${{ fromJSON(needs.setup.outputs.apply_matrix) }}
+    env:
+      CLIENT: ${{ matrix.env }}
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false # so the scripts can read `terraform output`
+      - name: Install dig
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq dnsutils
+
+      - name: Read client file
+        id: client
+        run: |
+          source infra/scripts/lib/client.sh
+          echo "delegation_role=$(client_delegation_role_arn "$CLIENT")" >> "$GITHUB_OUTPUT"
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_TF_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-      - name: Apply
-        run: infra/scripts/tf.sh "${{ matrix.env }}" apply -auto-approve -input=false
+
+      - name: Create DNS zone (if this client gets one)
+        id: zone
+        env:
+          CONFIRM_FRESH: ${{ inputs.confirm_fresh }}
+        run: |
+          infra/scripts/onboard-site.sh --phase create-zone "$CLIENT" | tee -a "$GITHUB_STEP_SUMMARY"
+          ns=$(infra/scripts/tf.sh "$CLIENT" output -json hosted_zone_name_servers | jq -r '.[]' | tr '\n' ' ')
+          echo "ns=$ns" >> "$GITHUB_OUTPUT"
+
+      # Subdomain of another client's zone → write the NS record there.
+      - name: Switch to the parent zone's delegation role
+        if: steps.client.outputs.delegation_role != '' && steps.zone.outputs.ns != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ steps.client.outputs.delegation_role }}
+          aws-region: us-east-1
+      - name: Add NS record in the parent zone
+        if: steps.client.outputs.delegation_role != '' && steps.zone.outputs.ns != ''
+        env:
+          NS: ${{ steps.zone.outputs.ns }}
+        run: infra/scripts/delegate-ns.sh upsert "$CLIENT" $NS
+      - name: Switch back to the client's role
+        if: steps.client.outputs.delegation_role != '' && steps.zone.outputs.ns != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TF_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Apply (waits for DNS delegation to go live first)
+        run: infra/scripts/onboard-site.sh --phase finish "$CLIENT"

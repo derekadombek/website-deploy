@@ -58,6 +58,27 @@ jobs:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3
 
+      # Subdomain delegated from another client's zone → remove that NS record
+      # first, so the parent zone isn't left pointing at a deleted zone.
+      - name: Read client file
+        id: client
+        env:
+          CLIENT: ${{ inputs.client }}
+        run: |
+          source infra/scripts/lib/client.sh
+          echo "delegation_role=$(client_delegation_role_arn "$CLIENT")" >> "$GITHUB_OUTPUT"
+      - name: Switch to the parent zone's delegation role
+        if: steps.client.outputs.delegation_role != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ steps.client.outputs.delegation_role }}
+          aws-region: us-east-1
+      - name: Remove NS record from the parent zone
+        if: steps.client.outputs.delegation_role != ''
+        env:
+          CLIENT: ${{ inputs.client }}
+        run: infra/scripts/delegate-ns.sh delete "$CLIENT"
+
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:

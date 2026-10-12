@@ -26,6 +26,8 @@ www: true                        # serve www + 301 it to the apex
 error_page: /index.html          # 404 page; /error.html for multi-page sites
 app_branch: main                 # app repo branch allowed to deploy
 ci: true                         # false = validate only; no GitHub Environment
+delegate_from: portfolio         # domain is a subdomain of this client's zone —
+                                 # Provision adds the NS record there (needs dns: external)
 state_bucket: acme-tf-state      # [<name>-tf-state] Terraform state, in their account
 lock_table: acme-tf-locks        # [<name>-tf-locks]
 ```
@@ -36,4 +38,4 @@ lock_table: acme-tf-locks        # [<name>-tf-locks]
 |---|---|
 | `existing-zone` | they already have a Route 53 hosted zone for it |
 | `route53-registrar` | registered in Route 53 in their account — zone created + delegated automatically |
-| `external` | registered elsewhere — zone created, you paste 4 nameservers at the registrar |
+| `external` | zone created here; delegated automatically with `delegate_from`, otherwise you paste 4 nameservers at the registrar while Provision waits |

@@ -13,12 +13,15 @@
 # Usage:
 #   grant-access.sh --project <p> --region <r> --deploy-repo <o/r> \
 #     --mgmt-environment <env> --state-bucket <b> --lock-table <t> \
-#     [--mgmt-repo <o/r>] [--branch <b>]
+#     [--mgmt-repo <o/r>] [--branch <b>] [--delegation-zone <zone>]
+#
+#   --delegation-zone  also create <project>-dns-delegation, letting other clients
+#                      delegate subdomains of this account's <zone> to themselves.
 
 set -euo pipefail
 
 PROJECT="" REGION="" DEPLOY_REPO="" MGMT_ENV="" STATE_BUCKET="" LOCK_TABLE=""
-MGMT_REPO="" BRANCH=""
+MGMT_REPO="" BRANCH="" DELEGATION_ZONE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -30,6 +33,7 @@ while [ $# -gt 0 ]; do
     --lock-table) LOCK_TABLE="$2"; shift 2;;
     --mgmt-repo) MGMT_REPO="$2"; shift 2;;
     --branch) BRANCH="$2"; shift 2;;
+    --delegation-zone) DELEGATION_ZONE="$2"; shift 2;;
     *) echo "unknown option: $1" >&2; exit 1;;
   esac
 done
@@ -77,7 +81,8 @@ terraform apply -auto-approve -input=false \
   -var="tf_state_bucket=${STATE_BUCKET}" \
   -var="tf_lock_table=${LOCK_TABLE}" \
   ${MGMT_REPO:+-var="mgmt_github_repo=${MGMT_REPO}"} \
-  ${BRANCH:+-var="github_branch=${BRANCH}"}
+  ${BRANCH:+-var="github_branch=${BRANCH}"} \
+  ${DELEGATION_ZONE:+-var="delegation_zone_name=${DELEGATION_ZONE}"}
 
 echo
 echo "=== access granted — role ARNs ==="

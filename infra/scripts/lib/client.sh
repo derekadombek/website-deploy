@@ -43,6 +43,17 @@ client_check() {
         *) errs+="  dns must be existing-zone, route53-registrar or external\n" ;;
       esac
     fi
+
+    local parent; parent="$(client_get "${name}" delegate_from)"
+    if [ -n "${parent}" ]; then
+      local pzone; pzone="$(client_parent_zone "${name}")"
+      [ -f "${REPO_ROOT}/clients/${parent}.yaml" ] || errs+="  delegate_from: no client file clients/${parent}.yaml\n"
+      [ "$(client_get "${name}" dns)" = "external" ] || errs+="  delegate_from needs dns: external (the zone is created here, delegated from ${parent})\n"
+      case "$(client_get "${name}" hosted_zone "$(client_get "${name}" domain)")" in
+        *."${pzone}") ;;
+        *) errs+="  delegate_from: domain must be a subdomain of ${parent}'s zone (${pzone:-none})\n" ;;
+      esac
+    fi
   fi
 
   [ -z "${errs}" ] || { printf "clients/%s.yaml is invalid:\n${errs}" "${name}" >&2; return 1; }
@@ -83,3 +94,17 @@ client_tf_init() {
 # Role ARNs are predictable from the client file — no copying them around.
 client_tf_role_arn() { echo "arn:aws:iam::$(client_get "$1" account_id):role/$1-terraform"; }
 client_deploy_role_arn() { echo "arn:aws:iam::$(client_get "$1" account_id):role/$1-github-deploy"; }
+
+# Subdomain delegation (delegate_from: <parent client>) — the parent client's
+# account holds the zone the NS record goes in, and a <parent>-dns-delegation
+# role (infra/access, delegation_zone_name) that's allowed to write it.
+client_parent_zone() {
+  local parent; parent="$(client_get "$1" delegate_from)"
+  [ -n "${parent}" ] && [ -f "${REPO_ROOT}/clients/${parent}.yaml" ] || return 0
+  client_get "${parent}" hosted_zone "$(client_get "${parent}" domain)"
+}
+client_delegation_role_arn() {
+  local parent; parent="$(client_get "$1" delegate_from)"
+  [ -n "${parent}" ] || return 0
+  echo "arn:aws:iam::$(client_get "${parent}" account_id):role/${parent}-dns-delegation"
+}

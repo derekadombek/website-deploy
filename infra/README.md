@@ -83,10 +83,10 @@ are no ARNs to copy between steps.
    PR, merge. Merging runs **Set CI Environment** automatically: it creates the
    client's GitHub Environment with `AWS_TF_ROLE_ARN` (built from the account id)
    + `AWS_REGION` + you as reviewer.
-3. **Provision** — **Provision Client's AWS Setup**, client `<name>`, approve.
-   For `dns: external` use **Provision Client's External Domain for AWS** instead
-   (`confirm_fresh` on the first run) — it pauses for you to paste the 4
-   nameservers at the registrar.
+3. **Provision** — **Provision Client's AWS Setup**, client `<name>`
+   (`confirm_fresh` on the first run), approve. It handles every DNS case from
+   the client file — see *DNS* below. For an outside registrar it prints 4
+   nameservers in the run summary and waits while you paste them.
 4. **Wire the app repo** — Variables `AWS_REGION`,
    `AWS_DEPLOY_ROLE_ARN` (`arn:aws:iam::<acct>:role/<name>-github-deploy`),
    `S3_BUCKET` + `CLOUDFRONT_DISTRIBUTION_ID` (`tf.sh <name> output`), and the
@@ -114,11 +114,15 @@ Setting `domain` needs a Route 53 hosted zone for it. Pick `dns` in the client f
   - **Registered in Route 53 / Amazon Registrar (this account)** →
     `dns: route53-registrar`. The nameservers are set automatically — fully
     hands-off, a single `terraform apply` works.
-  - **Registered elsewhere (GoDaddy, Namecheap, …)** → `dns: external`, and
-    provision with the **Provision Client's External Domain for AWS** workflow (or
-    locally with the babysitter script), which creates the zone, prints the
-    nameservers, **waits for you/the client to paste them at the registrar**, then
-    finishes the apply so it never hangs at cert validation:
+  - **Subdomain of another client's zone** (e.g. `bob.derekadombek.com` under
+    portfolio's `derekadombek.com`) → `dns: external` + `delegate_from: portfolio`.
+    Provision writes the NS record into the parent zone itself — fully
+    hands-off — and Teardown removes it. Needs the parent's
+    `<parent>-dns-delegation` role (below).
+  - **Registered elsewhere (GoDaddy, Namecheap, …)** → `dns: external`. Provision
+    creates the zone, prints the nameservers, **waits for you/the client to paste
+    them at the registrar**, then finishes the apply so it never hangs at cert
+    validation. Locally, the babysitter script does the same:
     ```bash
     # first-ever provision needs CONFIRM_FRESH=1 (guardrail below)
     CONFIRM_FRESH=1 AWS_PROFILE=<client-bootstrap> infra/scripts/onboard-site.sh <client>
@@ -129,9 +133,27 @@ Setting `domain` needs a Route 53 hosted zone for it. Pick `dns` in the client f
 > onboard is a safe no-op (the backend creator skips existing resources; apply is
 > declarative). The danger is a re-run that can't see its state (deleted/renamed
 > state bucket, wrong backend) — Terraform would recreate everything and silently
-> make a **duplicate Route 53 zone**. So `onboard-site.sh` (and the External Domain
-> workflow) **refuse to apply against empty state** unless `CONFIRM_FRESH=1` /
-> `confirm-fresh: true`, which you set only for the genuine first run.
+> make a **duplicate Route 53 zone**. So `onboard-site.sh` (and Provision)
+> **refuse to apply against empty state** unless `CONFIRM_FRESH=1` /
+> `confirm_fresh`, which you set only for the genuine first run.
+
+### Delegation role (for `delegate_from`)
+
+The parent client's account needs a `<parent>-dns-delegation` role, created by
+its access stack when given a zone — re-run the access step with
+`--delegation-zone`:
+
+```bash
+AWS_PROFILE=derek infra/scripts/grant-access.sh --project portfolio --region us-west-2 \
+  --deploy-repo derekadombek/portfolio --mgmt-environment portfolio \
+  --state-bucket website-deploy-tf-state-west --lock-table website-deploy-tf-locks \
+  --delegation-zone derekadombek.com
+```
+
+It trusts any GitHub Environment job in this repo (all have required reviewers)
+and can **only** create/delete NS records for subdomains in that one zone — never
+the apex. Always pass `--delegation-zone` when re-running portfolio's access
+step, or the role is removed.
 
 For a client keeping DNS elsewhere entirely (Cloudflare, etc.), leave `domain: ""`
 (ship the CloudFront default domain) and have them CNAME to it.
@@ -148,8 +170,8 @@ the client. Each holds:
 that touches `clients/` (or by hand, no inputs) and creates/updates an environment
 for each client. Clients with `ci: false` (e.g. `example-client`) get none, so
 they're validated but never planned/applied. It never deletes an environment —
-remove one by hand after removing a client. The provision,
-external-domain and teardown workflows take the client name as free text and
+remove one by hand after removing a client. The provision
+and teardown workflows take the client name as free text (no default) and
 reject anything without a `clients/<name>.yaml`.
 
 ## Verify

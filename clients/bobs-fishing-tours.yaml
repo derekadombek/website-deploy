@@ -3,10 +3,11 @@ provider: aws
 account_id: "349788921554"
 region: us-west-2
 app_repo: derekadombek/bobs-fishing-tours
-# Zone lives in this account; delegated from derekadombek.com (portfolio account)
-# with an NS record named `bob`.
+# Zone lives in this account; Provision adds the `bob` NS record in portfolio's
+# derekadombek.com zone automatically (delegate_from).
 domain: bob.derekadombek.com
 dns: external
+delegate_from: portfolio
 www: false
 # Multi-page site with its own 404 page.
 error_page: /error.html
