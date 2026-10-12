@@ -19,12 +19,14 @@ data "aws_caller_identity" "current" {}
 module "github_oidc" {
   source = "../modules/aws/github_oidc"
 
-  name_prefix          = var.project_name
-  deploy_github_repo   = var.deploy_github_repo
-  github_branch        = var.github_branch
-  mgmt_github_repo     = var.mgmt_github_repo
-  mgmt_environment     = var.mgmt_environment
-  create_oidc_provider = var.create_oidc_provider
+  name_prefix                 = var.project_name
+  deploy_github_repo          = var.deploy_github_repo
+  deploy_github_repo_owner_id = var.deploy_github_repo_owner_id
+  deploy_github_repo_id       = var.deploy_github_repo_id
+  github_branch               = var.github_branch
+  mgmt_github_repo            = var.mgmt_github_repo
+  mgmt_environment            = var.mgmt_environment
+  create_oidc_provider        = var.create_oidc_provider
 
   bucket_arn       = "arn:aws:s3:::${var.project_name}-site-${data.aws_caller_identity.current.account_id}"
   distribution_arn = "*"
