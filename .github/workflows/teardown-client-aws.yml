@@ -98,29 +98,47 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false # so the scripts can read `terraform output`
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TF_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       # Subdomain delegated from another client's zone → remove that NS record
-      # first, so the parent zone isn't left pointing at a deleted zone.
-      - name: Read client file
+      # first, so the parent zone isn't left pointing at a deleted zone. The
+      # state says where it was put (even if delegate_from has changed since);
+      # the client file is the fallback.
+      - name: Find the delegation record
         id: client
         env:
           CLIENT: ${{ inputs.client }}
         run: |
           source infra/scripts/lib/client.sh
-          echo "delegation_role=$(client_delegation_role_arn "$CLIENT")" >> "$GITHUB_OUTPUT"
+          recorded="$(client_recorded_delegation "$CLIENT")"
+          read -r parent record <<<"$recorded"
+          if [ -z "$parent" ] && [ -n "$(client_get "$CLIENT" delegate_from)" ]; then
+            parent="$(client_get "$CLIENT" delegate_from)"
+            record="$(client_get "$CLIENT" hosted_zone "$(client_get "$CLIENT" domain)")"
+          fi
+          if [ -n "$parent" ]; then
+            { echo "parent=$parent"; echo "record=$record"; echo "role=$(client_parent_role_arn "$parent")"; } >> "$GITHUB_OUTPUT"
+          fi
       - name: Switch to the parent zone's delegation role
-        if: steps.client.outputs.delegation_role != ''
+        if: steps.client.outputs.parent != ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ steps.client.outputs.delegation_role }}
+          role-to-assume: ${{ steps.client.outputs.role }}
           aws-region: us-east-1
       - name: Remove NS record from the parent zone
-        if: steps.client.outputs.delegation_role != ''
+        if: steps.client.outputs.parent != ''
         env:
-          CLIENT: ${{ inputs.client }}
-        run: infra/scripts/delegate-ns.sh delete "$CLIENT"
-
-      - name: Configure AWS credentials (OIDC)
+          PARENT: ${{ steps.client.outputs.parent }}
+          RECORD: ${{ steps.client.outputs.record }}
+        run: infra/scripts/delegate-ns.sh delete-record "$PARENT" "$RECORD"
+      - name: Switch back to the client's role
+        if: steps.client.outputs.parent != ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_TF_ROLE_ARN }}

@@ -42,8 +42,9 @@ variable "tf_state_bucket" {
 }
 
 variable "tf_lock_table" {
-  description = "State lock table (created by the action)."
+  description = "DynamoDB state lock table (created by the action). Empty = S3 lockfile only."
   type        = string
+  default     = ""
 }
 
 variable "create_oidc_provider" {

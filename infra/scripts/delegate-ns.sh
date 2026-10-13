@@ -10,18 +10,36 @@
 # Usage:
 #   delegate-ns.sh upsert <client> <ns1> <ns2> [<ns3> <ns4>]   # idempotent
 #   delegate-ns.sh delete <client>                             # no-op if absent
+#   delegate-ns.sh delete-record <parent client> <record>      # no-op if absent
+#
+# delete-record removes a record the client file no longer describes (its
+# delegate_from was removed or changed) — the values come from the client's
+# state; see client_stale_delegation.
 
 set -euo pipefail
 
-ACTION="${1:?usage: delegate-ns.sh upsert|delete <client> [ns…]}"
-NAME="${2:?usage: delegate-ns.sh upsert|delete <client> [ns…]}"
+usage="usage: delegate-ns.sh upsert|delete <client> [ns…] | delete-record <parent> <record>"
+ACTION="${1:?${usage}}"
+NAME="${2:?${usage}}"
 shift 2
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib/client.sh"
-client_check "${NAME}"
-PARENT_ZONE="$(client_parent_zone "${NAME}")"
-[ -n "${PARENT_ZONE}" ] || { echo "${NAME} has no delegate_from — nothing to delegate" >&2; exit 1; }
-RECORD="$(client_get "${NAME}" hosted_zone "$(client_get "${NAME}" domain)")"
+if [ "${ACTION}" = "delete-record" ]; then
+  PARENT="${NAME}"
+  RECORD="${1:?${usage}}"
+  [ -f "${CLIENTS_DIR}/${PARENT}.yaml" ] || { echo "no client file clients/${PARENT}.yaml for the parent zone" >&2; exit 1; }
+  PARENT_ZONE="$(client_get "${PARENT}" hosted_zone "$(client_get "${PARENT}" domain)")"
+  case "${RECORD}" in
+    *."${PARENT_ZONE}") ;;
+    *) echo "${RECORD} isn't a subdomain of ${PARENT_ZONE} — refusing to touch it" >&2; exit 1 ;;
+  esac
+  ACTION=delete
+else
+  client_check "${NAME}"
+  PARENT_ZONE="$(client_parent_zone "${NAME}")"
+  [ -n "${PARENT_ZONE}" ] || { echo "${NAME} has no delegate_from — nothing to delegate" >&2; exit 1; }
+  RECORD="$(client_get "${NAME}" hosted_zone "$(client_get "${NAME}" domain)")"
+fi
 
 ZONE_ID="$(aws route53 list-hosted-zones-by-name --dns-name "${PARENT_ZONE}" --max-items 1 \
   --query "HostedZones[?Name=='${PARENT_ZONE}.'] | [0].Id" --output text)"

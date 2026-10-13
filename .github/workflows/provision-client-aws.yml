@@ -26,6 +26,8 @@ name: Provision Client's AWS Setup
 #   - dns: external, domain at an outside registrar → creates the zone, prints
 #     the 4 nameservers in the run summary, and WAITS (up to 1h) while you paste
 #     them at the registrar; then applies.
+#   - delegate_from removed or changed → first deletes the NS record from the
+#     old parent zone (the client's state remembers where it was).
 on:
   workflow_call:
     inputs:
@@ -290,6 +292,37 @@ jobs:
           echo "delegation_role=$(client_delegation_role_arn "$CLIENT")" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_TF_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # delegate_from removed or changed since the last apply → the old parent
+      # zone still holds this client's NS record (the state remembers where).
+      - name: Find a stale delegation record
+        id: stale
+        run: |
+          source infra/scripts/lib/client.sh
+          stale="$(client_stale_delegation "$CLIENT")"
+          read -r parent record <<<"$stale"
+          if [ -n "$parent" ]; then
+            echo "Stale NS record: $record in $parent's zone — removing it" | tee -a "$GITHUB_STEP_SUMMARY"
+            { echo "parent=$parent"; echo "record=$record"; echo "role=$(client_parent_role_arn "$parent")"; } >> "$GITHUB_OUTPUT"
+          fi
+      - name: Switch to the old parent zone's delegation role
+        if: steps.stale.outputs.parent != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ steps.stale.outputs.role }}
+          aws-region: us-east-1
+      - name: Remove the stale NS record
+        if: steps.stale.outputs.parent != ''
+        env:
+          PARENT: ${{ steps.stale.outputs.parent }}
+          RECORD: ${{ steps.stale.outputs.record }}
+        run: infra/scripts/delegate-ns.sh delete-record "$PARENT" "$RECORD"
+      - name: Switch back to the client's role
+        if: steps.stale.outputs.parent != ''
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_TF_ROLE_ARN }}

@@ -162,10 +162,15 @@ data "aws_iam_policy_document" "terraform" {
     ]
   }
 
-  statement {
-    sid       = "TerraformLock"
-    actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
-    resources = ["arn:aws:dynamodb:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:table/${var.tf_lock_table}"]
+  # The S3 lockfile (<key>.tflock) is covered by the bucket/* grant above; the
+  # DynamoDB table only while a client still locks with it.
+  dynamic "statement" {
+    for_each = var.tf_lock_table != "" ? [1] : []
+    content {
+      sid       = "TerraformLock"
+      actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
+      resources = ["arn:aws:dynamodb:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:table/${var.tf_lock_table}"]
+    }
   }
 
   # Management plane for the services this stack creates. These services scope

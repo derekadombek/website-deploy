@@ -40,11 +40,22 @@ data "aws_iam_policy_document" "plan" {
     resources = ["arn:aws:s3:::${var.tf_state_bucket}", "arn:aws:s3:::${var.tf_state_bucket}/*"]
   }
 
-  # plan takes the state lock so it never reads a half-written state.
+  # plan takes the state lock so it never reads a half-written state: an S3
+  # lockfile next to the state (lockfiles only — the state itself stays
+  # read-only), plus the DynamoDB table while a client still locks with it.
   statement {
-    sid       = "StateLock"
-    actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
-    resources = ["arn:aws:dynamodb:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:table/${var.tf_lock_table}"]
+    sid       = "StateLockfile"
+    actions   = ["s3:PutObject", "s3:DeleteObject"]
+    resources = ["arn:aws:s3:::${var.tf_state_bucket}/*.tflock"]
+  }
+
+  dynamic "statement" {
+    for_each = var.tf_lock_table != "" ? [1] : []
+    content {
+      sid       = "StateLock"
+      actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:DeleteItem"]
+      resources = ["arn:aws:dynamodb:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:table/${var.tf_lock_table}"]
+    }
   }
 
   # Read the site bucket's configuration (plan refreshes every setting).

@@ -17,8 +17,9 @@ locals {
   clients_dir = var.clients_dir != "" ? var.clients_dir : "${path.module}/../../../clients"
   cfg         = yamldecode(file("${local.clients_dir}/${var.client}.yaml"))
 
-  domain = try(local.cfg.domain, "")
-  dns    = try(local.cfg.dns, "existing-zone")
+  domain        = try(local.cfg.domain, "")
+  dns           = try(local.cfg.dns, "existing-zone")
+  delegate_from = try(local.cfg.delegate_from, "")
 }
 
 module "site" {
@@ -46,3 +47,13 @@ output "cloudfront_domain_name" { value = module.site.cloudfront_domain_name }
 output "site_url" { value = module.site.site_url }
 output "hosted_zone_name" { value = module.site.hosted_zone_name }
 output "hosted_zone_name_servers" { value = module.site.hosted_zone_name_servers }
+
+# Which parent zone holds this client's NS record (delegate_from). Kept in state
+# so that when delegate_from is removed or changed, Provision still knows where
+# the old record is and deletes it (client_stale_delegation); Teardown too.
+output "delegation" {
+  value = {
+    parent = local.delegate_from
+    record = local.delegate_from == "" ? "" : try(local.cfg.hosted_zone, local.domain)
+  }
+}
