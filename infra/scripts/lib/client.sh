@@ -117,3 +117,20 @@ client_delegation_role_arn() {
   echo "arn:aws:iam::$(client_get "${parent}" account_id):role/${parent}-dns-delegation"
 }
 client_plan_role_arn() { echo "arn:aws:iam::$(client_get "$1" account_id):role/$1-plan"; }
+
+# client_dropdowns_check <workflows dir> — every workflow there with a `client`
+# dropdown (workflow_dispatch input of type choice) must list exactly the
+# CI-managed AWS clients (ci isn't false), plus optionally "all". Add a client's
+# name to the dropdowns in the same PR as its file. Needs yq (on GitHub runners).
+client_dropdowns_check() {
+  local dir="$1" f want have errs=""
+  want="$(for c in $(client_list aws); do [ "$(client_get "${c}" ci true)" = "false" ] || echo "${c}"; done | sort)"
+  for f in "${dir}"/*.yml "${dir}"/*.yaml; do
+    [ -f "${f}" ] || continue
+    [ "$(yq '.on.workflow_dispatch.inputs.client.type // ""' "${f}")" = "choice" ] || continue
+    have="$(yq '.on.workflow_dispatch.inputs.client.options[]' "${f}" | grep -vx all | sort || true)"
+    [ "${have}" = "${want}" ] ||
+      errs+="  $(basename "${f}"): missing [$(comm -23 <(echo "${want}") <(echo "${have}") | xargs)] extra [$(comm -13 <(echo "${want}") <(echo "${have}") | xargs)]\n"
+  done
+  [ -z "${errs}" ] || { printf "client dropdowns don't match the CI-managed clients in clients/:\n${errs}" >&2; return 1; }
+}

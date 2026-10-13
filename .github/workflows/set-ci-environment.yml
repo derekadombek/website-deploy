@@ -5,7 +5,8 @@ name: Set CI Environment
 # client), sets its scoped AWS_TF_ROLE_ARN + AWS_REGION variables (derived from
 # the client file), and adds you as required reviewer where the plan allows it. Clients with `ci: false`
 # are skipped. Idempotent: the clients repo runs it when clients/ changes on main,
-# and by hand.
+# and by hand. It then checks that the clients repo's `client` dropdowns list
+# exactly these clients (red run = add the new name to the dropdowns).
 #
 # It never removes an environment — delete one by hand after removing a client.
 #
@@ -56,9 +57,11 @@ jobs:
           echo "Only the repo owner may run this workflow (actor: ${{ github.actor }})." >&2
           exit 1
 
-      - uses: actions/checkout@v4 # client files: clients/ in the calling repo
+      - uses: actions/checkout@v4 # the calling repo: clients/ + its workflows (dropdowns)
         with:
-          sparse-checkout: clients
+          sparse-checkout: |
+            clients
+            .github/workflows
       - uses: actions/checkout@v4 # the package, at the caller's pinned ref
         with:
           repository: derekadombek/website-deploy
@@ -77,3 +80,10 @@ jobs:
             fi
             infra/scripts/register-ci-env.sh "$c" derekadombek
           done
+
+      # After the sync, so a new client's environment exists either way; this
+      # just goes red until its name is in the workflows' client dropdowns.
+      - name: Check client dropdowns match clients/
+        run: |
+          source infra/scripts/lib/client.sh
+          client_dropdowns_check "${GITHUB_WORKSPACE}/.github/workflows"

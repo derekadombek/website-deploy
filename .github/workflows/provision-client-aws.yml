@@ -1,7 +1,7 @@
 name: Provision Client's AWS Setup
 
-# Brings EVERY client's AWS setup in line with its client file. One input, `apply`
-# (default false):
+# Brings every client's (or one chosen client's) AWS setup in line with its
+# client file. Inputs: `client` (default "all") and `apply` (default false):
 #
 #   validate → plan (every client, read-only)
 #            → apply (only with apply: true, only clients whose plan shows changes)
@@ -37,6 +37,10 @@ on:
         description: Apply the clients whose plan shows changes. False = plan only.
         type: boolean
         default: false
+      client:
+        description: One client to plan/apply, or "all".
+        type: string
+        default: all
 
 permissions:
   id-token: write # OIDC token to assume the AWS roles
@@ -77,9 +81,11 @@ jobs:
         run: |
           echo "::error::Run Provision from main — the read-only plan roles only trust main."
           exit 1
-      - uses: actions/checkout@v4 # client files: clients/ in the calling repo
+      - uses: actions/checkout@v4 # the calling repo: clients/ + its workflows (dropdowns)
         with:
-          sparse-checkout: clients
+          sparse-checkout: |
+            clients
+            .github/workflows
       - uses: actions/checkout@v4 # the package, at the caller's pinned ref
         with:
           repository: derekadombek/website-deploy
@@ -89,10 +95,16 @@ jobs:
         id: scope
         env:
           GH_TOKEN: ${{ github.token }}
+          CLIENT_INPUT: ${{ inputs.client }}
         run: |
           set -euo pipefail
           source infra/scripts/lib/client.sh
+          client_dropdowns_check "${GITHUB_WORKSPACE}/.github/workflows"
           all=$(client_list aws)
+          if [ "${CLIENT_INPUT:-all}" != "all" ]; then
+            client_check "$CLIENT_INPUT"
+            all="$CLIENT_INPUT"
+          fi
           # CI-managed = has a GitHub Environment of the same name.
           envs=$(gh api "repos/${GITHUB_REPOSITORY}/environments" --paginate --jq '.environments[].name')
           ci=$(for c in $all; do echo "$envs" | grep -qx "$c" && echo "$c" || true; done)
@@ -113,9 +125,11 @@ jobs:
       fail-fast: false
       matrix: ${{ fromJSON(needs.setup.outputs.all_matrix) }}
     steps:
-      - uses: actions/checkout@v4 # client files: clients/ in the calling repo
+      - uses: actions/checkout@v4 # the calling repo: clients/ + its workflows (dropdowns)
         with:
-          sparse-checkout: clients
+          sparse-checkout: |
+            clients
+            .github/workflows
       - uses: actions/checkout@v4 # the package, at the caller's pinned ref
         with:
           repository: derekadombek/website-deploy
@@ -148,9 +162,11 @@ jobs:
     env:
       CLIENT: ${{ matrix.env }}
     steps:
-      - uses: actions/checkout@v4 # client files: clients/ in the calling repo
+      - uses: actions/checkout@v4 # the calling repo: clients/ + its workflows (dropdowns)
         with:
-          sparse-checkout: clients
+          sparse-checkout: |
+            clients
+            .github/workflows
       - uses: actions/checkout@v4 # the package, at the caller's pinned ref
         with:
           repository: derekadombek/website-deploy
@@ -245,9 +261,11 @@ jobs:
     env:
       CLIENT: ${{ matrix.env }}
     steps:
-      - uses: actions/checkout@v4 # client files: clients/ in the calling repo
+      - uses: actions/checkout@v4 # the calling repo: clients/ + its workflows (dropdowns)
         with:
-          sparse-checkout: clients
+          sparse-checkout: |
+            clients
+            .github/workflows
       - uses: actions/checkout@v4 # the package, at the caller's pinned ref
         with:
           repository: derekadombek/website-deploy
