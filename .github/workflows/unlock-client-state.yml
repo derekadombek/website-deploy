@@ -52,9 +52,11 @@ jobs:
         run: |
           echo "Only the repo owner may run this workflow (actor: ${{ github.actor }})." >&2
           exit 1
-      - uses: actions/checkout@v4 # client files: clients/ in the calling repo
+      - uses: actions/checkout@v4 # the calling repo: clients/ + its workflows (dropdowns)
         with:
-          sparse-checkout: clients
+          sparse-checkout: |
+            clients
+            .github/workflows
       - uses: actions/checkout@v4 # the package, at the caller's pinned ref
         with:
           repository: derekadombek/website-deploy
@@ -65,7 +67,9 @@ jobs:
           CLIENT: ${{ inputs.client }}
           LOCK_ID: ${{ inputs.lock_id }}
         run: |
-          source infra/scripts/lib/client.sh && client_check "$CLIENT"
+          source infra/scripts/lib/client.sh
+          client_dropdowns_check "${GITHUB_WORKSPACE}/.github/workflows"
+          client_check "$CLIENT"
           echo "$LOCK_ID" | grep -qE '^[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$' ||
             { echo "::error::lock_id should look like 77118d68-29e5-eb2c-532b-c9341a1c0027"; exit 1; }
 
@@ -74,9 +78,11 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.client }} # scoped AWS_TF_ROLE_ARN/AWS_REGION (+ approval, if it has reviewers)
     steps:
-      - uses: actions/checkout@v4 # client files: clients/ in the calling repo
+      - uses: actions/checkout@v4 # the calling repo: clients/ + its workflows (dropdowns)
         with:
-          sparse-checkout: clients
+          sparse-checkout: |
+            clients
+            .github/workflows
       - uses: actions/checkout@v4 # the package, at the caller's pinned ref
         with:
           repository: derekadombek/website-deploy
