@@ -34,8 +34,8 @@ to touch any other account.
 
 ```bash
 export CLIENTS_DIR=~/repos/website-deploy-clients/clients   # the real client files
-infra/scripts/tf.sh portfolio plan     # local: uses your active AWS creds
-infra/scripts/tf.sh portfolio output
+infra/scripts/tf.sh acme plan          # local: uses your active AWS creds
+infra/scripts/tf.sh acme output
 ```
 
 ## The auth model (no stored keys, ever)
@@ -65,7 +65,7 @@ provisioning share trust.
 
 ### One model: access config + site
 
-Every site — your own (e.g. `portfolio`) and clients alike — is onboarded the
+Every site — your own and clients alike — is onboarded the
 same way. The **`aws-grant-access`** action runs once per account (with that
 account's own creds) and stands up the trust foundation in the separate access
 config (`infra/access`): the state backend + OIDC provider + deploy and
@@ -119,8 +119,8 @@ Setting `domain` needs a Route 53 hosted zone for it. Pick `dns` in the client f
   - **Registered in Route 53 / Amazon Registrar (this account)** →
     `dns: route53-registrar`. The nameservers are set automatically — fully
     hands-off, a single `terraform apply` works.
-  - **Subdomain of another client's zone** (e.g. `bob.derekadombek.com` under
-    portfolio's `derekadombek.com`) → `dns: external` + `delegate_from: portfolio`.
+  - **Subdomain of another client's zone** (e.g. `shop.acme.com` under client
+    `acme`'s `acme.com`) → `dns: external` + `delegate_from: acme`.
     Provision writes the NS record into the parent zone itself — fully
     hands-off — and Teardown removes it. Needs the parent's
     `<parent>-dns-delegation` role (below).
@@ -149,15 +149,15 @@ its access stack when given a zone — re-run the access step with
 `--delegation-zone`:
 
 ```bash
-AWS_PROFILE=derek infra/scripts/grant-access.sh --project portfolio --region us-west-2 \
-  --deploy-repo derekadombek/portfolio --mgmt-environment portfolio \
-  --state-bucket website-deploy-tf-state-west --lock-table website-deploy-tf-locks \
-  --delegation-zone derekadombek.com
+AWS_PROFILE=acme-admin infra/scripts/grant-access.sh --project acme --region us-west-2 \
+  --deploy-repo acme-co/website --mgmt-environment acme \
+  --state-bucket acme-tf-state --lock-table acme-tf-locks \
+  --delegation-zone acme.com
 ```
 
 It trusts any GitHub Environment job in the management repo
 and can **only** create/delete NS records for subdomains in that one zone — never
-the apex. Always pass `--delegation-zone` when re-running portfolio's access
+the apex. Always pass `--delegation-zone` when re-running the parent's access
 step, or the role is removed.
 
 For a client keeping DNS elsewhere entirely (Cloudflare, etc.), leave `domain: ""`

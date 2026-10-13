@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
 # Add/remove the NS record that delegates a client's subdomain zone from its
-# parent zone (client file: delegate_from: <parent client>). E.g. for Bob's,
-# writes `bob.derekadombek.com NS …` into portfolio's derekadombek.com zone.
+# parent zone (client file: delegate_from: <parent client>). E.g. for a client
+# at shop.acme.com, writes `shop.acme.com NS …` into client acme's acme.com zone.
 #
 # Auth: credentials for the PARENT account — in CI the <parent>-dns-delegation
 # role (NS records only), locally any profile with Route 53 access there.

@@ -4,12 +4,12 @@ variable "project_name" {
 }
 
 variable "site_domain" {
-  description = "Fully-qualified domain the site is served at, e.g. derekadombek.com."
+  description = "Fully-qualified domain the site is served at, e.g. acme.com."
   type        = string
 }
 
 variable "hosted_zone_name" {
-  description = "Route 53 hosted zone the domain lives in, e.g. derekadombek.com. Used only when manage_dns = true; must already exist in this account."
+  description = "Route 53 hosted zone the domain lives in, e.g. acme.com. Used only when manage_dns = true; must already exist in this account."
   type        = string
   default     = ""
 }
