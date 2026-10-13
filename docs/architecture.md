@@ -4,7 +4,7 @@ A short tour of *why* the stack is built this way.
 
 ## Request flow
 
-A visitor hits the site (e.g. `https://derekadombek.com`):
+A visitor hits the site (e.g. `https://acme.com`):
 
 1. **Route 53** resolves the domain to the CloudFront distribution (alias record).
 2. **CloudFront** terminates TLS using the **ACM** certificate and serves cached

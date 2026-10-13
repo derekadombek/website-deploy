@@ -1,6 +1,6 @@
 # Optional DNS-delegation role: lets OTHER clients' provisioning add the NS
 # record that delegates a subdomain of a zone in THIS account (e.g.
-# bob.derekadombek.com from derekadombek.com). Only created when
+# shop.acme.com from acme.com). Only created when
 # delegation_zone_name is set.
 #
 # Trust: any GitHub Environment job in the management repo (only its writers

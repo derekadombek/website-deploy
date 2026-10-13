@@ -34,7 +34,7 @@ www: true                        # serve www + 301 it to the apex
 error_page: /index.html          # 404 page; /error.html for multi-page sites
 app_branch: main                 # app repo branch allowed to deploy
 ci: true                         # false = validate only; no GitHub Environment
-delegate_from: portfolio         # domain is a subdomain of this client's zone —
+delegate_from: acme              # domain is a subdomain of this client's zone —
                                  # Provision adds the NS record there (needs dns: external)
 state_bucket: acme-tf-state      # [<name>-tf-state] Terraform state, in their account
 state_lock: s3                   # [dynamodb] how state is locked — see below
