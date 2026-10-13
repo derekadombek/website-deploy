@@ -4,9 +4,10 @@ name: Grant AWS access (one-time onboarding)
 #
 # Stands up the trust foundation in the client's AWS account so
 # Derek's management repo can manage it over OIDC: creates the Terraform
-# state backend + GitHub OIDC provider + deploy role + management role. Run it
-# ONCE; after that everything is keyless and this workflow never needs to run
-# again (re-running is a safe no-op).
+# state bucket (locked with an S3 lockfile) + GitHub OIDC provider + deploy,
+# Terraform and read-only plan roles. Run it ONCE; after that everything is
+# keyless and this workflow never needs to run again (re-running is a safe
+# no-op).
 #
 # Before running — privileged, SHORT-LIVED creds for the account:
 #   1. AWS access portal → the account → "Access keys" → copy the temporary
@@ -31,7 +32,7 @@ on:
         required: false
         default: ""
       lock-table:
-        description: Terraform lock table (blank = <client-name>-tf-locks)
+        description: DynamoDB lock table — leave blank (S3 lockfile). Only for older clients on state_lock dynamodb/both, e.g. <client-name>-tf-locks
         required: false
         default: ""
       github-branch:
@@ -53,11 +54,9 @@ jobs:
         env:
           NAME: ${{ inputs.client-name }}
           BUCKET: ${{ inputs.state-bucket }}
-          TABLE: ${{ inputs.lock-table }}
         run: |
           echo "$NAME" | grep -qE '^[a-z0-9][a-z0-9-]*$' || { echo "::error::client-name must be lowercase letters, digits, dashes"; exit 1; }
           echo "state-bucket=${BUCKET:-$NAME-tf-state}" >> "$GITHUB_OUTPUT"
-          echo "lock-table=${TABLE:-$NAME-tf-locks}" >> "$GITHUB_OUTPUT"
 
       # OIDC doesn't exist yet — this workflow creates it — so it needs the
       # short-lived privileged creds from the repo secrets (see top).
@@ -77,5 +76,5 @@ jobs:
           deploy-github-repo: ${{ github.repository }}
           mgmt-environment: ${{ inputs.client-name }}
           state-bucket: ${{ steps.names.outputs.state-bucket }}
-          lock-table: ${{ steps.names.outputs.lock-table }}
+          lock-table: ${{ inputs.lock-table }}
           github-branch: ${{ inputs.github-branch }}
