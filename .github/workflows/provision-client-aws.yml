@@ -198,7 +198,7 @@ jobs:
           cat plan.txt
           case $rc in
             0) summary="no changes" ;;
-            2) summary="**has changes — needs approval**"; mkdir -p changes; touch "changes/$CLIENT" ;;
+            2) summary="**has changes**"; mkdir -p changes; touch "changes/$CLIENT" ;;
             *) echo "::error::plan failed for $CLIENT"; exit $rc ;;
           esac
           {

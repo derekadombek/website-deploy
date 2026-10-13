@@ -81,9 +81,10 @@ are no ARNs to copy between steps.
 
 1. **Client grants access (once, their account)** — they run `aws-grant-access`
    with their own admin creds, `project-name` + `mgmt-environment` = the client
-   name, `state-bucket` `<name>-tf-state`, `lock-table` `<name>-tf-locks`, and
-   their app repo. It creates the state backend + OIDC provider + deploy,
-   Terraform and read-only plan roles. They send you their **AWS account id**.
+   name, `state-bucket` `<name>-tf-state`, no `lock-table` (state is locked with an
+   S3 lockfile; set `state_lock: s3` in the client file), and their app repo. It
+   creates the state backend + OIDC provider + deploy, Terraform and read-only plan
+   roles. They send you their **AWS account id**.
 2. **Add `clients/<name>.yaml`** in the private clients repo (fields:
    [`clients/README.md`](../clients/README.md)) — PR, merge. Merging runs **Set CI Environment** automatically: it creates the
    client's GitHub Environment with `AWS_TF_ROLE_ARN` (built from the account id)
@@ -152,7 +153,7 @@ its access stack when given a zone — re-run the access step with
 ```bash
 AWS_PROFILE=acme-admin infra/scripts/grant-access.sh --project acme --region us-west-2 \
   --deploy-repo acme-co/website --mgmt-environment acme \
-  --state-bucket acme-tf-state --lock-table acme-tf-locks \
+  --state-bucket acme-tf-state \
   --delegation-zone acme.com
 ```
 
