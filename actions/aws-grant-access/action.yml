@@ -28,8 +28,9 @@ inputs:
     description: S3 state bucket to create.
     required: true
   lock-table:
-    description: DynamoDB lock table to create.
-    required: true
+    description: DynamoDB lock table to create. Empty (new clients) = no table; state is locked with an S3 lockfile.
+    required: false
+    default: ""
   mgmt-github-repo:
     description: Management repo allowed to run Terraform (the private clients repo).
     required: false

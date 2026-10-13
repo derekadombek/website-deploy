@@ -41,6 +41,10 @@ client_check() {
   [ -d "${REPO_ROOT}/infra/sites/${provider:-none}" ] || errs+="  provider '${provider}' has no infra/sites/<provider> root\n"
 
   if [ "${provider}" = "aws" ]; then
+    case "$(client_get "${name}" state_lock dynamodb)" in
+      dynamodb | both | s3) ;;
+      *) errs+="  state_lock must be dynamodb, both or s3\n" ;;
+    esac
     client_get "${name}" account_id | grep -qE '^[0-9]{12}$' || errs+="  account_id must be the 12-digit AWS account id (quoted)\n"
     [ -n "$(client_get "${name}" region)" ] || errs+="  region is required\n"
     client_get "${name}" app_repo | grep -qE '^[^/]+/[^/]+$' || errs+="  app_repo must be owner/name\n"
@@ -89,11 +93,19 @@ client_tf_init() {
 
   case "${provider}" in
     aws)
+      # state_lock: dynamodb (the old table) → both (switching) → s3 (lockfile only).
+      local table lock
+      table="-backend-config=dynamodb_table=$(client_get "${name}" lock_table "${name}-tf-locks")"
+      lock=("${table}")
+      case "$(client_get "${name}" state_lock dynamodb)" in
+        both) lock=("${table}" -backend-config=use_lockfile=true) ;;
+        s3) lock=(-backend-config=use_lockfile=true) ;;
+      esac
       terraform init -input=false -reconfigure \
         -backend-config="bucket=$(client_get "${name}" state_bucket "${name}-tf-state")" \
         -backend-config="key=sites/${name}/terraform.tfstate" \
         -backend-config="region=$(client_get "${name}" region)" \
-        -backend-config="dynamodb_table=$(client_get "${name}" lock_table "${name}-tf-locks")" \
+        "${lock[@]}" \
         -backend-config="encrypt=true" >/dev/null
       ;;
   esac
@@ -114,7 +126,27 @@ client_parent_zone() {
 client_delegation_role_arn() {
   local parent; parent="$(client_get "$1" delegate_from)"
   [ -n "${parent}" ] || return 0
-  echo "arn:aws:iam::$(client_get "${parent}" account_id):role/${parent}-dns-delegation"
+  client_parent_role_arn "${parent}"
+}
+client_parent_role_arn() { echo "arn:aws:iam::$(client_get "$1" account_id):role/$1-dns-delegation"; }
+
+# client_recorded_delegation <name> — "<parent> <record>" from the client's
+# state (the sites stack's `delegation` output, written by the last apply), or
+# nothing if it had none. Needs creds that can read the client's state.
+client_recorded_delegation() {
+  local out; out="$("${LIB_DIR}/../tf.sh" "$1" output -json)" || return 1
+  jq -r '.delegation.value // {} | select((.parent // "") != "") | "\(.parent) \(.record)"' <<<"${out}"
+}
+
+# client_stale_delegation <name> — the recorded delegation if the client file no
+# longer asks for exactly that one (delegate_from removed or changed, or the
+# domain moved), so its NS record in the old parent zone should go.
+client_stale_delegation() {
+  local was now=""
+  was="$(client_recorded_delegation "$1")" || return 1
+  [ -n "$(client_get "$1" delegate_from)" ] &&
+    now="$(client_get "$1" delegate_from) $(client_get "$1" hosted_zone "$(client_get "$1" domain)")"
+  [ -z "${was}" ] || [ "${was}" = "${now}" ] || echo "${was}"
 }
 client_plan_role_arn() { echo "arn:aws:iam::$(client_get "$1" account_id):role/$1-plan"; }
 

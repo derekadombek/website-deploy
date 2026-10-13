@@ -106,7 +106,7 @@ handed to you; from then on it's keyless.
 | `deploy-github-repo` | yes | — | App repo that deploys the site. |
 | `mgmt-environment` | yes | — | GitHub Environment the management role trusts (= the site env name). |
 | `state-bucket` | yes | — | State bucket to create. |
-| `lock-table` | yes | — | Lock table to create. |
+| `lock-table` | no | `""` | DynamoDB lock table to create — only for clients still on `state_lock: dynamodb`/`both`. Empty = S3 lockfile. |
 | `mgmt-github-repo` | no | `derekadombek/website-deploy-clients` | Management repo (private; runs this package's workflows). |
 | `github-branch` | no | `main` | App repo deploy branch. |
 | `role-arn` | no | `""` | Admin role to assume via OIDC; empty = creds from a prior step. |
@@ -134,7 +134,6 @@ jobs:
           deploy-github-repo: acme/site
           mgmt-environment: acme
           state-bucket: acme-tf-state
-          lock-table: acme-tf-locks
 ```
 
 It outputs the deploy + management role ARNs. You then build the site over OIDC

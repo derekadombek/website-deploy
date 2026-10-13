@@ -37,8 +37,23 @@ ci: true                         # false = validate only; no GitHub Environment
 delegate_from: portfolio         # domain is a subdomain of this client's zone —
                                  # Provision adds the NS record there (needs dns: external)
 state_bucket: acme-tf-state      # [<name>-tf-state] Terraform state, in their account
-lock_table: acme-tf-locks        # [<name>-tf-locks]
+state_lock: s3                   # [dynamodb] how state is locked — see below
+lock_table: acme-tf-locks        # [<name>-tf-locks] only for state_lock dynamodb/both
 ```
+
+`state_lock` — Terraform's DynamoDB locking is deprecated; the S3 lockfile
+(`use_lockfile`) replaces it. **New clients: set `state_lock: s3`** and run
+grant-access without `lock-table` (no table is created). The default is still
+`dynamodb` so clients set up before the switch keep working.
+
+Switching an existing client (each step is safe to stop after):
+
+1. Re-run grant-access with this package version, still passing `lock-table`
+   (gives the plan role access to the lockfile; it keeps the table access).
+2. `state_lock: both` — every run takes both locks; run Provision (plan only).
+3. Once no older checkout or run can still lock with only the table:
+   `state_lock: s3`, re-run grant-access without `lock-table` (drops the table
+   access), then delete the `<name>-tf-locks` table.
 
 `dns` — where the domain's DNS lives:
 

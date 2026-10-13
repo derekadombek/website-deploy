@@ -12,10 +12,12 @@
 #
 # Usage:
 #   grant-access.sh --project <p> --region <r> --deploy-repo <o/r> \
-#     --mgmt-environment <env> --state-bucket <b> --lock-table <t> \
+#     --mgmt-environment <env> --state-bucket <b> [--lock-table <t>] \
 #     [--mgmt-repo <o/r>] [--mgmt-repo-ids <ownerId>/<repoId>] [--branch <b>] \
 #     [--delegation-zone <zone>] [--deploy-repo-ids <ownerId>/<repoId>]
 #
+#   --lock-table       only for clients still locking with DynamoDB (state_lock:
+#                      dynamodb or both). Without it the roles get no table access.
 #   --delegation-zone  also create <project>-dns-delegation, letting other clients
 #                      delegate subdomains of this account's <zone> to themselves.
 
@@ -41,14 +43,14 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-for req in PROJECT REGION DEPLOY_REPO MGMT_ENV STATE_BUCKET LOCK_TABLE; do
+for req in PROJECT REGION DEPLOY_REPO MGMT_ENV STATE_BUCKET; do
   [ -n "${!req}" ] || { echo "--$(echo "$req" | tr 'A-Z_' 'a-z-') is required" >&2; exit 1; }
 done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ACCESS_DIR="${SCRIPT_DIR}/../access"
 
-# 1. State backend (CLI — creates the bucket + lock table if they're missing).
+# 1. State backend (CLI — creates the bucket, and the lock table if named, if missing).
 "${SCRIPT_DIR}/bootstrap-backend.sh" "${STATE_BUCKET}" "${LOCK_TABLE}" "${REGION}"
 
 # 2. Access Terraform, state stored in the bucket just created.
@@ -57,7 +59,8 @@ terraform init -input=false -reconfigure \
   -backend-config="bucket=${STATE_BUCKET}" \
   -backend-config="key=access/terraform.tfstate" \
   -backend-config="region=${REGION}" \
-  -backend-config="dynamodb_table=${LOCK_TABLE}" \
+  -backend-config="use_lockfile=true" \
+  ${LOCK_TABLE:+-backend-config="dynamodb_table=${LOCK_TABLE}"} \
   -backend-config="encrypt=true"
 
 # 3. The account can only have ONE GitHub OIDC provider. Create it unless the

@@ -60,8 +60,9 @@ variable "tf_state_bucket" {
 }
 
 variable "tf_lock_table" {
-  description = "Name of the DynamoDB table used for Terraform state locking."
+  description = "DynamoDB table for Terraform state locking (the old way). Empty = no table: state is locked with an S3 lockfile (use_lockfile) only."
   type        = string
+  default     = ""
 }
 
 variable "deploy_github_repo_owner_id" {

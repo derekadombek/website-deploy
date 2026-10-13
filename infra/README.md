@@ -25,9 +25,10 @@ modules never hardcode them.**
 ## Each client owns its own account boundary
 
 `infra/sites/aws` has a partial `backend "s3" {}`. `tf.sh <client>` inits it
-against that client's state — bucket `<name>-tf-state`, table `<name>-tf-locks`,
-key `sites/<name>/terraform.tfstate`, all in **the client's own account** (override
-with `state_bucket` / `lock_table`). Each client gets its own `.terraform-<name>`
+against that client's state — bucket `<name>-tf-state`, key
+`sites/<name>/terraform.tfstate`, locked with an S3 lockfile or (older clients) the
+`<name>-tf-locks` DynamoDB table, all in **the client's own account** (override with
+`state_bucket` / `state_lock` / `lock_table`; see `clients/README.md`). Each client gets its own `.terraform-<name>`
 data dir, so switching clients never reuses another client's backend. The
 providers set `allowed_account_ids` from the client file, so Terraform refuses
 to touch any other account.

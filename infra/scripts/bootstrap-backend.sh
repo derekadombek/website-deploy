@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Create the Terraform state backend (S3 bucket + DynamoDB lock table) in the
-# CURRENT AWS account. Run this ONCE per new account, before `terraform init`,
+# Create the Terraform state backend (S3 bucket, plus a DynamoDB lock table if
+# you name one) in the CURRENT AWS account. Run this ONCE per new account, before `terraform init`,
 # because an S3 backend can't bootstrap the bucket it stores state in.
 #
 # Auth: uses your active AWS credentials/profile — for a client, the one-time
@@ -9,21 +9,22 @@
 #
 # Usage:
 #   AWS_PROFILE=client-bootstrap \
-#     infra/scripts/bootstrap-backend.sh <state-bucket> <lock-table> [region]
+#     infra/scripts/bootstrap-backend.sh <state-bucket> [<lock-table>|""] [region]
 #
-# The names you pass MUST match the env's versions.tf backend block and its
-# tf_state_bucket / tf_lock_table inputs in main.tf.
+# New clients don't need a lock table: state is locked with an S3 lockfile
+# (use_lockfile). Pass "" for it; the table is only for clients still on
+# `state_lock: dynamodb` / `both` (clients/README.md).
 
 set -euo pipefail
 
-BUCKET="${1:?usage: bootstrap-backend.sh <state-bucket> <lock-table> [region]}"
-TABLE="${2:?usage: bootstrap-backend.sh <state-bucket> <lock-table> [region]}"
+BUCKET="${1:?usage: bootstrap-backend.sh <state-bucket> [<lock-table>|\"\"] [region]}"
+TABLE="${2:-}"
 REGION="${3:-us-west-2}"
 
 ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
 echo "Account: ${ACCOUNT}   Region: ${REGION}"
 echo "Bucket:  ${BUCKET}"
-echo "Table:   ${TABLE}"
+echo "Table:   ${TABLE:-none (S3 lockfile)}"
 echo
 
 # --- S3 state bucket: versioned, encrypted, fully private --------------------
@@ -47,8 +48,10 @@ else
   echo "created bucket ${BUCKET}"
 fi
 
-# --- DynamoDB lock table ----------------------------------------------------
-if aws dynamodb describe-table --table-name "${TABLE}" --region "${REGION}" >/dev/null 2>&1; then
+# --- DynamoDB lock table (only if named) ------------------------------------
+if [ -z "${TABLE}" ]; then
+  echo "no lock table — state is locked with an S3 lockfile"
+elif aws dynamodb describe-table --table-name "${TABLE}" --region "${REGION}" >/dev/null 2>&1; then
   echo "table ${TABLE} already exists — skipping"
 else
   aws dynamodb create-table --table-name "${TABLE}" --region "${REGION}" \
@@ -60,6 +63,5 @@ else
 fi
 
 echo
-echo "Backend ready (${BUCKET} / ${TABLE} in ${REGION}). If these aren't the"
-echo "<name>-tf-state / <name>-tf-locks defaults, set state_bucket / lock_table in"
-echo "clients/<name>.yaml."
+echo "Backend ready (${BUCKET}${TABLE:+ / ${TABLE}} in ${REGION}). If the bucket isn't"
+echo "the <name>-tf-state default, set state_bucket in clients/<name>.yaml."
