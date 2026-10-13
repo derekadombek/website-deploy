@@ -356,3 +356,24 @@ jobs:
 
       - name: Apply (waits for DNS delegation to go live first)
         run: infra/scripts/onboard-site.sh --phase finish "$CLIENT"
+
+      # Health check: the domain answers over HTTPS (DNS, certificate, CDN all
+      # work). Any HTTP status passes; a site that hasn't deployed yet answers 403.
+      # Fails the run if it never answers, so a bad upgrade is caught here: roll
+      # back by reverting the pin bump and running Provision with apply again.
+      - name: Health check
+        run: |
+          source infra/scripts/lib/client.sh
+          domain="$(client_get "$CLIENT" domain)"
+          [ -n "$domain" ] || { echo "No domain — skipping the health check"; exit 0; }
+          for i in $(seq 1 10); do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "https://$domain/" || true)
+            if [ -n "$code" ] && [ "$code" != "000" ]; then
+              echo "### $CLIENT — https://$domain answers ($code)" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "https://$domain not answering yet (try $i/10)"; sleep 30
+          done
+          echo "::error::https://$domain did not answer over HTTPS after 5 minutes"
+          echo "### $CLIENT — https://$domain does not answer over HTTPS" >> "$GITHUB_STEP_SUMMARY"
+          exit 1

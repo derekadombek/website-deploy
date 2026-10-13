@@ -1,0 +1,46 @@
+name: Release
+
+# Push a vX.Y.Z tag on main → a GitHub Release with that version's CHANGELOG.md
+# section as its notes, and the major tag (v1) moved to it.
+#
+#   1. Move CHANGELOG.md's "## Unreleased" entries under "## vX.Y.Z" (PR, merge).
+#   2. git tag vX.Y.Z origin/main && git push origin vX.Y.Z
+#
+# Fails (and creates nothing) if the tag isn't on main or has no changelog section.
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: write # create the release, move the major tag
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check the tag is on main
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main \
+            || { echo "::error::$GITHUB_REF_NAME is not on main"; exit 1; }
+      - name: Release notes from CHANGELOG.md
+        run: |
+          awk -v v="## $GITHUB_REF_NAME" '
+            $0 == v { on = 1; next }
+            on && /^## / { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          grep -q '[^[:space:]]' notes.md \
+            || { echo "::error::CHANGELOG.md has no '## $GITHUB_REF_NAME' section"; exit 1; }
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --notes-file notes.md --verify-tag
+      - name: Move the major tag
+        run: |
+          major="${GITHUB_REF_NAME%%.*}"
+          git tag -f "$major" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$major"
+          echo "Moved $major to $GITHUB_REF_NAME" >> "$GITHUB_STEP_SUMMARY"

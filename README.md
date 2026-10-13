@@ -102,6 +102,47 @@ infra/                          provisioning catalog        (→ infra/README.md
 Full walkthrough, the auth model, and "add a client": [`infra/README.md`](infra/README.md).
 Action inputs + more examples: [`actions/README.md`](actions/README.md).
 
+## Releases and upgrades
+
+Releases are `vX.Y.Z` tags with notes in [`CHANGELOG.md`](CHANGELOG.md), including
+**upgrade notes** for anything a caller has to do. Pushing the tag runs
+[`release.yml`](.github/workflows/release.yml): it creates the GitHub Release and
+moves `v1` to it.
+
+Callers pin an **exact version** and never `@v1`. That means the clients repo's
+workflows (`uses: …@v1.2.0` plus `package_ref: v1.2.0`) and each client repo's
+`deploy.yml` / `grant-access.yml`. An upgrade is a PR that bumps the pin.
+[Renovate](https://docs.renovatebot.com/) opens it when a release ships, with this
+`renovate.json` in each calling repo (the custom manager keeps `package_ref` in step
+with `uses:`):
+
+```json
+{
+  "extends": ["config:recommended"],
+  "packageRules": [
+    { "matchDepNames": ["derekadombek/website-deploy"], "groupName": "website-deploy" }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^\\.github/workflows/.+\\.ya?ml$/"],
+      "matchStrings": ["package_ref:\\s*(?<currentValue>v\\d+\\.\\d+\\.\\d+)"],
+      "depNameTemplate": "derekadombek/website-deploy",
+      "datasourceTemplate": "github-tags"
+    }
+  ]
+}
+```
+
+Rolling out an upgrade in the clients repo:
+
+1. Read the release's upgrade notes. Merge the pin-bump PR.
+2. Run **Provision** (plan only) and read each client's plan.
+3. Run it again with **apply** ticked. Every applied client ends with a **health
+   check** (its domain answers over HTTPS). If that fails, revert the bump PR and apply
+   again to roll back. Terraform state is versioned in S3 if the rollback needs it.
+4. Client repos: merge their pin-bump PR. The next push deploys with it.
+
 ## What it demonstrates
 
 | Practice | Where |

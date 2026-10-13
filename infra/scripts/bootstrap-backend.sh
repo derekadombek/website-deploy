@@ -29,7 +29,7 @@ echo
 
 # --- S3 state bucket: versioned, encrypted, fully private --------------------
 if aws s3api head-bucket --bucket "${BUCKET}" 2>/dev/null; then
-  echo "bucket ${BUCKET} already exists — skipping"
+  echo "bucket ${BUCKET} already exists — reusing it"
 else
   if [ "${REGION}" = "us-east-1" ]; then
     aws s3api create-bucket --bucket "${BUCKET}" --region "${REGION}" >/dev/null
@@ -37,16 +37,18 @@ else
     aws s3api create-bucket --bucket "${BUCKET}" --region "${REGION}" \
       --create-bucket-configuration "LocationConstraint=${REGION}" >/dev/null
   fi
-  aws s3api put-bucket-versioning --bucket "${BUCKET}" \
-    --versioning-configuration Status=Enabled
-  aws s3api put-bucket-encryption --bucket "${BUCKET}" \
-    --server-side-encryption-configuration \
-    '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
-  aws s3api put-public-access-block --bucket "${BUCKET}" \
-    --public-access-block-configuration \
-    BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
   echo "created bucket ${BUCKET}"
 fi
+# Applied every run, so a reused (older) bucket gets them too. Versioning is what
+# lets a bad apply be rolled back to an earlier state.
+aws s3api put-bucket-versioning --bucket "${BUCKET}" \
+  --versioning-configuration Status=Enabled
+aws s3api put-bucket-encryption --bucket "${BUCKET}" \
+  --server-side-encryption-configuration \
+  '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"}}]}'
+aws s3api put-public-access-block --bucket "${BUCKET}" \
+  --public-access-block-configuration \
+  BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
 
 # --- DynamoDB lock table (only if named) ------------------------------------
 if [ -z "${TABLE}" ]; then
