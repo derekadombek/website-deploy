@@ -34,7 +34,7 @@ on:
         type: string
         required: true
       apply:
-        description: Apply the clients whose plan shows changes. False = plan only.
+        description: Apply the clients whose plan shows changes (none = nothing to apply). False = plan only.
         type: boolean
         default: false
       client:
@@ -238,12 +238,17 @@ jobs:
           echo "matrix=$(printf '%s\n' $changed | jq -R . | jq -cs '{include: map(select(length>0) | {env: .})}')" >> "$GITHUB_OUTPUT"
           echo "has_changes=$([ -n "$changed" ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "clients with changes: ${changed:-none}"
-          if [ -n "$changed" ] && [ "${{ inputs.apply }}" != "true" ]; then
+          # One line that says what happens next (the apply job is skipped in two cases).
+          if [ -z "$changed" ]; then
+            echo "### No changes — nothing to apply (every planned client matches its file)" >> "$GITHUB_STEP_SUMMARY"
+          elif [ "${{ inputs.apply }}" != "true" ]; then
             {
               echo "### Plan only — nothing was changed"
               echo "Clients with changes: $(echo $changed). Read their plans above, then run"
               echo "Provision again with **apply** ticked."
             } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Applying: $(echo $changed)" >> "$GITHUB_STEP_SUMMARY"
           fi
 
   # Apply (only with apply: true): zone first, then delegation, then the rest.
