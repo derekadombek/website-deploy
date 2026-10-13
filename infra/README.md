@@ -202,7 +202,8 @@ brew uninstall terraform; brew install tfenv && tfenv install && tfenv use
 ```
 
 (`tfenv` reads `.terraform-version`.) The `aws-grant-access` action pins the same
-version — move the `v1` tag after changing it so client repos pick it up.
+version — release after changing it (README → *Releases and upgrades*) so client
+repos pick it up through their pin bump.
 
 ## Stale state lock
 

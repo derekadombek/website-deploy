@@ -146,4 +146,5 @@ the access config.
 1. Create `actions/<provider>-<capability>/action.yml` with `runs.using: composite`.
 2. Keep it account-agnostic — take role/target resources as inputs, never hardcode.
 3. Document its inputs + a caller snippet in a new section here.
-4. Tag a release (e.g. `v1`) so callers can pin `@v1`.
+4. Add it to `CHANGELOG.md` under `## Unreleased` and release (README → *Releases and
+   upgrades*); callers pin the exact version.
