@@ -11,6 +11,8 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
+## v1.1.0
+
 - New module `infra/modules/aws/next_app`: a Next.js app built with OpenNext, served
   by CloudFront → API Gateway (HTTP API) → Lambda, static files from a private S3
   bucket, with its own cert and DNS records in the client's zone. Terraform builds
