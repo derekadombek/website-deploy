@@ -55,6 +55,12 @@ client_check() {
       esac
     fi
 
+    local onsyte; onsyte="$(client_get "${name}" onsyte_subdomain)"
+    if [ -n "${onsyte}" ]; then
+      echo "${onsyte}" | grep -qE '^[a-z0-9][a-z0-9-]*$' || errs+="  onsyte_subdomain must be one DNS label (letters, digits, dashes)\n"
+      [ -n "$(client_get "${name}" domain)" ] || errs+="  onsyte_subdomain needs domain (Onsyte goes at <onsyte_subdomain>.<domain>)\n"
+    fi
+
     local parent; parent="$(client_get "${name}" delegate_from)"
     if [ -n "${parent}" ]; then
       local pzone; pzone="$(client_parent_zone "${name}")"

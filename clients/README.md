@@ -39,6 +39,9 @@ delegate_from: acme              # domain is a subdomain of this client's zone �
 state_bucket: acme-tf-state      # [<name>-tf-state] Terraform state, in their account
 state_lock: s3                   # [dynamodb] how state is locked — see below
 lock_table: acme-tf-locks        # [<name>-tf-locks] only for state_lock dynamodb/both
+onsyte_subdomain: onsyte         # [none] install Onsyte at onsyte.<domain> (needs domain;
+                                 # needs grant-access from v1.1.0 or later)
+onsyte_version: v0.1.0           # Onsyte release that Deploy Onsyte (clients repo) ships
 ```
 
 `state_lock` — Terraform's DynamoDB locking is deprecated; the S3 lockfile

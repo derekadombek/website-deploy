@@ -20,6 +20,10 @@ locals {
   domain        = try(local.cfg.domain, "")
   dns           = try(local.cfg.dns, "existing-zone")
   delegate_from = try(local.cfg.delegate_from, "")
+
+  # Optional Onsyte install at <onsyte_subdomain>.<domain>; needs a domain (it
+  # goes in the same zone). Code and settings are shipped by Deploy Onsyte.
+  onsyte_subdomain = try(local.cfg.onsyte_subdomain, "")
 }
 
 module "site" {
@@ -41,12 +45,35 @@ module "site" {
   error_page_path      = try(local.cfg.error_page, "/index.html")
 }
 
+module "onsyte" {
+  count  = local.onsyte_subdomain != "" ? 1 : 0
+  source = "../../modules/aws/next_app"
+  providers = {
+    aws           = aws
+    aws.us_east_1 = aws.us_east_1
+  }
+
+  name_prefix    = "${var.client}-onsyte"
+  domain         = "${local.onsyte_subdomain}.${local.domain}"
+  hosted_zone_id = module.site.hosted_zone_id
+}
+
 output "s3_bucket" { value = module.site.s3_bucket }
 output "cloudfront_distribution_id" { value = module.site.cloudfront_distribution_id }
 output "cloudfront_domain_name" { value = module.site.cloudfront_domain_name }
 output "site_url" { value = module.site.site_url }
 output "hosted_zone_name" { value = module.site.hosted_zone_name }
 output "hosted_zone_name_servers" { value = module.site.hosted_zone_name_servers }
+
+# Read by Deploy Onsyte: where to ship the release. null = no Onsyte here.
+output "onsyte" {
+  value = local.onsyte_subdomain == "" ? null : {
+    url                  = module.onsyte[0].url
+    assets_bucket        = module.onsyte[0].assets_bucket
+    server_function_name = module.onsyte[0].server_function_name
+    distribution_id      = module.onsyte[0].distribution_id
+  }
+}
 
 # Which parent zone holds this client's NS record (delegate_from). Kept in state
 # so that when delegate_from is removed or changed, Provision still knows where

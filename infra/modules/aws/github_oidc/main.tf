@@ -177,8 +177,48 @@ data "aws_iam_policy_document" "terraform" {
   # poorly on create operations, so they're granted at the service level.
   statement {
     sid       = "ManageStackServices"
-    actions   = ["s3:*", "cloudfront:*", "acm:*", "route53:*"]
+    actions   = ["s3:*", "cloudfront:*", "acm:*", "route53:*", "apigateway:*"]
     resources = ["*"]
+  }
+
+  # App installs (modules/aws/next_app): the server Lambda and its log group,
+  # scoped to this project's <name_prefix>-* names like the roles below.
+  statement {
+    sid       = "ManageProjectFunctions"
+    actions   = ["lambda:*"]
+    resources = ["arn:aws:lambda:*:${data.aws_caller_identity.current.account_id}:function:${var.name_prefix}-*"]
+  }
+
+  statement {
+    sid = "ManageProjectLogs"
+    actions = [
+      "logs:CreateLogGroup", "logs:DeleteLogGroup", "logs:PutRetentionPolicy",
+      "logs:DeleteRetentionPolicy", "logs:TagResource", "logs:UntagResource",
+      "logs:ListTagsForResource", "logs:TagLogGroup", "logs:ListTagsLogGroup",
+    ]
+    resources = [
+      "arn:aws:logs:*:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.name_prefix}-*",
+      "arn:aws:logs:*:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/${var.name_prefix}-*:*",
+    ]
+  }
+
+  statement {
+    sid       = "DescribeLogGroups"
+    actions   = ["logs:DescribeLogGroups"]
+    resources = ["*"]
+  }
+
+  # The server Lambda runs as a <name_prefix>-* role; it may only be handed to Lambda.
+  statement {
+    sid       = "PassProjectRolesToLambda"
+    actions   = ["iam:PassRole"]
+    resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.name_prefix}-*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "iam:PassedToService"
+      values   = ["lambda.amazonaws.com"]
+    }
   }
 
   # IAM, scoped to this project's own roles only — the escalation guard.
@@ -188,6 +228,7 @@ data "aws_iam_policy_document" "terraform" {
       "iam:CreateRole", "iam:DeleteRole", "iam:GetRole", "iam:TagRole", "iam:UntagRole",
       "iam:ListRolePolicies", "iam:ListAttachedRolePolicies",
       "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:GetRolePolicy",
+      "iam:UpdateAssumeRolePolicy", "iam:ListInstanceProfilesForRole",
     ]
     resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.name_prefix}-*"]
   }
