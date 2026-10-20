@@ -23,6 +23,11 @@ output "hosted_zone_name_servers" {
   value       = var.manage_dns && var.create_hosted_zone ? aws_route53_zone.primary[0].name_servers : []
 }
 
+output "hosted_zone_id" {
+  description = "Route 53 zone id the domain lives in (apps on subdomains add their records here). Null when manage_dns = false."
+  value       = local.zone_id
+}
+
 output "hosted_zone_name" {
   description = "The domain whose Route 53 zone this env manages (for delegation tooling). Empty when manage_dns = false."
   value       = var.manage_dns ? var.hosted_zone_name : ""

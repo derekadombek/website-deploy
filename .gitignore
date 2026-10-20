@@ -24,5 +24,8 @@ Thumbs.db
 
 .env*
 
+# Placeholder zips built by data.archive_file (modules/aws/next_app)
+**/.build/
+
 # Per-client Terraform data dirs (infra/scripts/lib/client.sh)
 **/.terraform-*/

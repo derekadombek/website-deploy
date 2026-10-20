@@ -58,11 +58,25 @@ data "aws_iam_policy_document" "plan" {
     }
   }
 
-  # Read the site bucket's configuration (plan refreshes every setting).
+  # Read the site bucket's configuration (plan refreshes every setting), and any
+  # other bucket of this project's (an app install's assets bucket).
   statement {
     sid       = "ReadSiteBucket"
     actions   = ["s3:GetBucket*", "s3:GetEncryptionConfiguration", "s3:GetLifecycleConfiguration", "s3:GetReplicationConfiguration", "s3:GetAccelerateConfiguration", "s3:ListBucket"]
-    resources = [var.bucket_arn]
+    resources = [var.bucket_arn, "arn:aws:s3:::${var.name_prefix}-*"]
+  }
+
+  # An app install's server Lambda, its log group and its role (modules/aws/next_app).
+  statement {
+    sid       = "ReadProjectFunctions"
+    actions   = ["lambda:Get*", "lambda:List*"]
+    resources = ["arn:aws:lambda:*:${data.aws_caller_identity.current.account_id}:function:${var.name_prefix}-*"]
+  }
+
+  statement {
+    sid       = "ReadProjectRoles"
+    actions   = ["iam:GetRole", "iam:GetRolePolicy", "iam:ListRolePolicies", "iam:ListAttachedRolePolicies"]
+    resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/${var.name_prefix}-*"]
   }
 
   statement {
@@ -72,6 +86,7 @@ data "aws_iam_policy_document" "plan" {
       "acm:Describe*", "acm:List*", "acm:GetCertificate",
       "route53:Get*", "route53:List*",
       "route53domains:Get*", "route53domains:List*",
+      "apigateway:GET", "logs:DescribeLogGroups", "logs:ListTagsForResource", "logs:ListTagsLogGroup",
     ]
     resources = ["*"]
   }

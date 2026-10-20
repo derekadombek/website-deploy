@@ -11,6 +11,22 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
+- New module `infra/modules/aws/next_app`: a Next.js app built with OpenNext, served
+  by CloudFront → API Gateway (HTTP API) → Lambda, static files from a private S3
+  bucket, with its own cert and DNS records in the client's zone. Terraform builds
+  the infrastructure only; a deploy workflow ships the code and its settings, so
+  they never land in Terraform state.
+- Client file: `onsyte_subdomain` installs Onsyte at `<onsyte_subdomain>.<domain>`.
+  The site root's new `onsyte` output tells the deploy workflow where to ship.
+- *Grant AWS access*: the `-terraform` role can manage Lambda functions, log groups
+  and API Gateway, and pass `<client>-*` roles to Lambda; the `-plan` role can read
+  them.
+- New provider in the site root: `hashicorp/archive` (the Lambda placeholder zip).
+
+**Upgrade notes:**
+- A client getting `onsyte_subdomain`: re-run *Grant AWS access* with this version
+  first, or Provision's apply fails on the new permissions. Other clients: nothing.
+
 ## v1.0.0
 
 First versioned release: everything up to the previous `v1` tag, plus the client-repo

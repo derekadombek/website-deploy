@@ -12,6 +12,9 @@ infra/modules/aws/           reusable building blocks (account-agnostic)
   acm_certificate/             DNS-validated ACM cert (us-east-1)
   github_oidc/                 OIDC provider + deploy role + Terraform role
   static_site_stack/           BUNDLE: zone + cert + static_site + DNS
+  next_app/                    a Next.js app (OpenNext): CloudFront → API Gateway →
+                                 Lambda, assets in S3, cert + DNS on a subdomain.
+                                 Code + settings are shipped by a deploy workflow
 infra/access/                the trust foundation a client applies once
 infra/scripts/tf.sh          run Terraform for one client: tf.sh <client> plan
 ```
