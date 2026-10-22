@@ -120,7 +120,7 @@ jobs:
           read -r parent record <<<"$recorded"
           if [ -z "$parent" ] && [ -n "$(client_get "$CLIENT" delegate_from)" ]; then
             parent="$(client_get "$CLIENT" delegate_from)"
-            record="$(client_get "$CLIENT" hosted_zone "$(client_get "$CLIENT" domain)")"
+            record="$(client_zone "$CLIENT")"
           fi
           if [ -n "$parent" ]; then
             { echo "parent=$parent"; echo "record=$record"; echo "role=$(client_parent_role_arn "$parent")"; } >> "$GITHUB_OUTPUT"
@@ -148,3 +148,14 @@ jobs:
         env:
           CLIENT: ${{ inputs.client }}
         run: infra/scripts/tf.sh "$CLIENT" destroy -auto-approve -input=false
+
+      # A zone delegated by hand at an outside DNS provider: those NS records are
+      # theirs to remove, or the name points at a zone that no longer exists.
+      - name: Remind about the NS records
+        env:
+          CLIENT: ${{ inputs.client }}
+        run: |
+          source infra/scripts/lib/client.sh
+          if [ "$(client_get "$CLIENT" dns)" = "external" ] && [ -z "$(client_get "$CLIENT" delegate_from)" ]; then
+            echo "### $CLIENT — remove the NS records for $(client_zone "$CLIENT") at their DNS provider" >> "$GITHUB_STEP_SUMMARY"
+          fi

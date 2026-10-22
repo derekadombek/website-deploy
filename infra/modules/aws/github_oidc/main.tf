@@ -17,9 +17,12 @@ data "aws_iam_openid_connect_provider" "github" {
 
 locals {
   oidc_provider_arn = var.create_oidc_provider ? aws_iam_openid_connect_provider.github[0].arn : data.aws_iam_openid_connect_provider.github[0].arn
+  deploy_role       = var.deploy_github_repo != ""
 }
 
 data "aws_iam_policy_document" "assume" {
+  count = local.deploy_role ? 1 : 0
+
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
     effect  = "Allow"
@@ -55,8 +58,15 @@ data "aws_iam_policy_document" "assume" {
 }
 
 resource "aws_iam_role" "deploy" {
+  count              = local.deploy_role ? 1 : 0
   name               = "${var.name_prefix}-github-deploy"
-  assume_role_policy = data.aws_iam_policy_document.assume.json
+  assume_role_policy = data.aws_iam_policy_document.assume[0].json
+}
+
+# Access stacks from before the deploy role was optional.
+moved {
+  from = aws_iam_role.deploy
+  to   = aws_iam_role.deploy[0]
 }
 
 data "aws_iam_policy_document" "permissions" {
@@ -88,9 +98,15 @@ data "aws_iam_policy_document" "permissions" {
 }
 
 resource "aws_iam_role_policy" "deploy" {
+  count  = local.deploy_role ? 1 : 0
   name   = "${var.name_prefix}-deploy"
-  role   = aws_iam_role.deploy.id
+  role   = aws_iam_role.deploy[0].id
   policy = data.aws_iam_policy_document.permissions.json
+}
+
+moved {
+  from = aws_iam_role_policy.deploy
+  to   = aws_iam_role_policy.deploy[0]
 }
 
 # --- Terraform / management role --------------------------------------------

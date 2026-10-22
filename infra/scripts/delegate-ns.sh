@@ -28,7 +28,7 @@ if [ "${ACTION}" = "delete-record" ]; then
   PARENT="${NAME}"
   RECORD="${1:?${usage}}"
   [ -f "${CLIENTS_DIR}/${PARENT}.yaml" ] || { echo "no client file clients/${PARENT}.yaml for the parent zone" >&2; exit 1; }
-  PARENT_ZONE="$(client_get "${PARENT}" hosted_zone "$(client_get "${PARENT}" domain)")"
+  PARENT_ZONE="$(client_zone "${PARENT}")"
   case "${RECORD}" in
     *."${PARENT_ZONE}") ;;
     *) echo "${RECORD} isn't a subdomain of ${PARENT_ZONE} — refusing to touch it" >&2; exit 1 ;;
@@ -38,7 +38,7 @@ else
   client_check "${NAME}"
   PARENT_ZONE="$(client_parent_zone "${NAME}")"
   [ -n "${PARENT_ZONE}" ] || { echo "${NAME} has no delegate_from — nothing to delegate" >&2; exit 1; }
-  RECORD="$(client_get "${NAME}" hosted_zone "$(client_get "${NAME}" domain)")"
+  RECORD="$(client_zone "${NAME}")"
 fi
 
 ZONE_ID="$(aws route53 list-hosted-zones-by-name --dns-name "${PARENT_ZONE}" --max-items 1 \

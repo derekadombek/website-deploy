@@ -1,0 +1,64 @@
+name: Grant AWS access (one-time onboarding)
+
+# Copy into the client's access repo as .github/workflows/grant-access.yml — for a
+# client with no site here (e.g. Onsyte only, their site is hosted elsewhere).
+# Clients whose site Derek hosts use templates/client-repo/ instead.
+#
+# Stands up the trust foundation in the client's AWS account so
+# Derek's management repo can manage it over OIDC: creates the Terraform
+# state bucket (locked with an S3 lockfile) + GitHub OIDC provider + Terraform
+# and read-only plan roles. No deploy role: nothing deploys from this repo.
+# Run it ONCE; after that everything is keyless and this workflow never needs
+# to run again (re-running is a safe no-op).
+#
+# Before running — privileged, SHORT-LIVED creds for the account:
+#   1. AWS access portal → the account → "Access keys" → copy the temporary
+#      AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN.
+#      No portal yet (a new account)? Turn on IAM Identity Center first:
+#      website-deploy templates/access-repo/README.md, "Short-lived admin keys".
+#   2. Add them as repo secrets with those names.
+# After it succeeds:
+#   3. DELETE the three secrets (the session expires anyway, but don't leave them).
+#   4. Send the account id to Derek (the 12 digits in the role ARNs printed at the end).
+
+on:
+  workflow_dispatch:
+    inputs:
+      client-name:
+        description: Client name — must match the client file Derek adds (clients/<name>.yaml)
+        required: true
+      aws-region:
+        description: AWS region for the state bucket and the app
+        required: true
+        default: us-west-2
+
+permissions:
+  contents: read
+
+jobs:
+  grant-access:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the client name
+        env:
+          NAME: ${{ inputs.client-name }}
+        run: |
+          echo "$NAME" | grep -qE '^[a-z0-9][a-z0-9-]*$' || { echo "::error::client-name must be lowercase letters, digits, dashes"; exit 1; }
+
+      # OIDC doesn't exist yet — this workflow creates it — so it needs the
+      # short-lived privileged creds from the repo secrets (see top).
+      - name: Configure AWS credentials (privileged, short-lived)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ inputs.aws-region }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+
+      - name: Grant access
+        uses: derekadombek/website-deploy/actions/aws-grant-access@v1
+        with:
+          aws-region: ${{ inputs.aws-region }}
+          project-name: ${{ inputs.client-name }}
+          mgmt-environment: ${{ inputs.client-name }}
+          state-bucket: ${{ inputs.client-name }}-tf-state
