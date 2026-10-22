@@ -12,6 +12,8 @@ name: Grant AWS access (one-time onboarding)
 # Before running — privileged, SHORT-LIVED creds for the account:
 #   1. AWS access portal → the account → "Access keys" → copy the temporary
 #      AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN.
+#      No portal yet (a new account)? Turn on IAM Identity Center first:
+#      website-deploy templates/access-repo/README.md, "Short-lived admin keys".
 #   2. Add them as repo secrets with those names.
 # After it succeeds:
 #   3. DELETE the three secrets (the session expires anyway, but don't leave them).

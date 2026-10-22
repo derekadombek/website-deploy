@@ -19,8 +19,9 @@ inputs:
     description: Project name — must match the site env's project_name.
     required: true
   deploy-github-repo:
-    description: App repo that deploys the site (owner/name).
-    required: true
+    description: App repo that deploys the site (owner/name). Empty = no site in this account (Onsyte only), so no deploy role.
+    required: false
+    default: ""
   mgmt-environment:
     description: GitHub Environment (in the management repo) the Terraform role trusts — same as the site env name.
     required: true

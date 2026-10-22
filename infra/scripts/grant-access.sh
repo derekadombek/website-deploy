@@ -11,11 +11,13 @@
 # Auth: uses the active AWS credentials (the client's privileged access).
 #
 # Usage:
-#   grant-access.sh --project <p> --region <r> --deploy-repo <o/r> \
+#   grant-access.sh --project <p> --region <r> [--deploy-repo <o/r>] \
 #     --mgmt-environment <env> --state-bucket <b> [--lock-table <t>] \
 #     [--mgmt-repo <o/r>] [--mgmt-repo-ids <ownerId>/<repoId>] [--branch <b>] \
 #     [--delegation-zone <zone>] [--deploy-repo-ids <ownerId>/<repoId>]
 #
+#   --deploy-repo      the app repo that deploys the site. Leave it out when there's
+#                      no site here (Onsyte only): no deploy role is made.
 #   --lock-table       only for clients still locking with DynamoDB (state_lock:
 #                      dynamodb or both). Without it the roles get no table access.
 #   --delegation-zone  also create <project>-dns-delegation, letting other clients
@@ -43,7 +45,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-for req in PROJECT REGION DEPLOY_REPO MGMT_ENV STATE_BUCKET; do
+for req in PROJECT REGION MGMT_ENV STATE_BUCKET; do
   [ -n "${!req}" ] || { echo "--$(echo "$req" | tr 'A-Z_' 'a-z-') is required" >&2; exit 1; }
 done
 

@@ -366,6 +366,8 @@ jobs:
           source infra/scripts/lib/client.sh
           domain="$(client_get "$CLIENT" domain)"
           [ -n "$domain" ] || { echo "No domain — skipping the health check"; exit 0; }
+          # No site here: check the app instead.
+          [ "$(client_get "$CLIENT" site true)" = "false" ] && domain="$(client_get "$CLIENT" onsyte_subdomain).$domain"
           for i in $(seq 1 10); do
             code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 "https://$domain/" || true)
             if [ -n "$code" ] && [ "$code" != "000" ]; then

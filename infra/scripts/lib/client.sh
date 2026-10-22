@@ -21,6 +21,17 @@ client_get() {
   printf '%s' "${v:-${3:-}}"
 }
 
+# client_zone <name> — the Route 53 zone the client's records go in: hosted_zone,
+# else the domain, else (site: false) just Onsyte's <onsyte_subdomain>.<domain>.
+# infra/sites/aws computes the same thing (local.zone_name).
+client_zone() {
+  local fallback; fallback="$(client_get "$1" domain)"
+  if [ "$(client_get "$1" site true)" = "false" ] && [ -n "$(client_get "$1" onsyte_subdomain)" ]; then
+    fallback="$(client_get "$1" onsyte_subdomain).${fallback}"
+  fi
+  client_get "$1" hosted_zone "${fallback}"
+}
+
 # client_list [provider] — every client name (optionally only one provider's).
 client_list() {
   local f n
@@ -47,7 +58,14 @@ client_check() {
     esac
     client_get "${name}" account_id | grep -qE '^[0-9]{12}$' || errs+="  account_id must be the 12-digit AWS account id (quoted)\n"
     [ -n "$(client_get "${name}" region)" ] || errs+="  region is required\n"
-    client_get "${name}" app_repo | grep -qE '^[^/]+/[^/]+$' || errs+="  app_repo must be owner/name\n"
+    local site; site="$(client_get "${name}" site true)"
+    case "${site}" in
+      true | false) ;;
+      *) errs+="  site must be true or false\n" ;;
+    esac
+    if [ "${site}" != "false" ] || [ -n "$(client_get "${name}" app_repo)" ]; then
+      client_get "${name}" app_repo | grep -qE '^[^/]+/[^/]+$' || errs+="  app_repo must be owner/name\n"
+    fi
     if [ -n "$(client_get "${name}" domain)" ]; then
       case "$(client_get "${name}" dns existing-zone)" in
         existing-zone | route53-registrar | external) ;;
@@ -59,6 +77,20 @@ client_check() {
     if [ -n "${onsyte}" ]; then
       echo "${onsyte}" | grep -qE '^[a-z0-9][a-z0-9-]*$' || errs+="  onsyte_subdomain must be one DNS label (letters, digits, dashes)\n"
       [ -n "$(client_get "${name}" domain)" ] || errs+="  onsyte_subdomain needs domain (Onsyte goes at <onsyte_subdomain>.<domain>)\n"
+      case "${onsyte}.$(client_get "${name}" domain)" in
+        "$(client_zone "${name}")" | *."$(client_zone "${name}")") ;;
+        *) errs+="  hosted_zone must hold ${onsyte}.$(client_get "${name}" domain) (be it or a parent of it)\n" ;;
+      esac
+    fi
+
+    # No site: the account only runs Onsyte, in its own zone (onsyte.<domain> by
+    # default) — the client's site and DNS stay wherever they are.
+    if [ "${site}" = "false" ]; then
+      [ -n "${onsyte}" ] || errs+="  site: false needs onsyte_subdomain (there's nothing else to build)\n"
+      case "$(client_get "${name}" dns existing-zone)" in
+        existing-zone | external) ;;
+        *) errs+="  site: false needs dns: external or existing-zone\n" ;;
+      esac
     fi
 
     local parent; parent="$(client_get "${name}" delegate_from)"
@@ -66,7 +98,7 @@ client_check() {
       local pzone; pzone="$(client_parent_zone "${name}")"
       [ -f "${CLIENTS_DIR}/${parent}.yaml" ] || errs+="  delegate_from: no client file clients/${parent}.yaml\n"
       [ "$(client_get "${name}" dns)" = "external" ] || errs+="  delegate_from needs dns: external (the zone is created here, delegated from ${parent})\n"
-      case "$(client_get "${name}" hosted_zone "$(client_get "${name}" domain)")" in
+      case "$(client_zone "${name}")" in
         *."${pzone}") ;;
         *) errs+="  delegate_from: domain must be a subdomain of ${parent}'s zone (${pzone:-none})\n" ;;
       esac
@@ -127,7 +159,7 @@ client_deploy_role_arn() { echo "arn:aws:iam::$(client_get "$1" account_id):role
 client_parent_zone() {
   local parent; parent="$(client_get "$1" delegate_from)"
   [ -n "${parent}" ] && [ -f "${CLIENTS_DIR}/${parent}.yaml" ] || return 0
-  client_get "${parent}" hosted_zone "$(client_get "${parent}" domain)"
+  client_zone "${parent}"
 }
 client_delegation_role_arn() {
   local parent; parent="$(client_get "$1" delegate_from)"
@@ -151,7 +183,7 @@ client_stale_delegation() {
   local was now=""
   was="$(client_recorded_delegation "$1")" || return 1
   [ -n "$(client_get "$1" delegate_from)" ] &&
-    now="$(client_get "$1" delegate_from) $(client_get "$1" hosted_zone "$(client_get "$1" domain)")"
+    now="$(client_get "$1" delegate_from) $(client_zone "$1")"
   [ -z "${was}" ] || [ "${was}" = "${now}" ] || echo "${was}"
 }
 client_plan_role_arn() { echo "arn:aws:iam::$(client_get "$1" account_id):role/$1-plan"; }

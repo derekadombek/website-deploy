@@ -21,7 +21,7 @@ Keep it **flat `key: value`** (no nesting) — the scripts read it with plain sh
 provider: aws                    # which infra/sites/<provider> root builds it
 account_id: "123456789012"       # quoted — the client's AWS account
 region: us-west-2
-app_repo: acme-co/website        # repo that deploys the site (owner/name)
+app_repo: acme-co/website        # repo that deploys the site (owner/name); not with site: false
 domain: acme.com                 # "" = serve the CloudFront default URL for now
 dns: existing-zone               # only when domain is set — see below
 ```
@@ -29,7 +29,9 @@ dns: existing-zone               # only when domain is set — see below
 Optional (defaults shown):
 
 ```yaml
-hosted_zone: acme.com            # [= domain] Route 53 zone the domain lives in
+site: true                       # false = no website here (see "No site here")
+hosted_zone: acme.com            # [= domain; site: false = <onsyte_subdomain>.<domain>]
+                                 # Route 53 zone the records go in
 www: true                        # serve www + 301 it to the apex
 error_page: /index.html          # 404 page; /error.html for multi-page sites
 app_branch: main                 # app repo branch allowed to deploy
@@ -65,3 +67,30 @@ Switching an existing client (each step is safe to stop after):
 | `existing-zone` | they already have a Route 53 hosted zone for it |
 | `route53-registrar` | registered in Route 53 in their account — zone created + delegated automatically |
 | `external` | zone created here; delegated automatically with `delegate_from`, otherwise you paste 4 nameservers at the registrar while Provision waits |
+
+## No site here (`site: false`)
+
+For a client whose website is hosted somewhere else and who only gets Onsyte in their
+account. No S3 site, no CloudFront for it, no `app_repo`; the account gets a Route 53
+zone for just `onsyte.<domain>`, and their own site and DNS stay where they are.
+
+```yaml
+provider: aws
+account_id: "123456789012"
+region: us-west-2
+site: false
+domain: acme.com                 # their domain; Onsyte goes at onsyte.acme.com
+dns: external                    # zone onsyte.acme.com created here
+state_lock: s3
+onsyte_subdomain: onsyte
+onsyte_version: v0.3.0
+```
+
+- **Access:** they run *Grant AWS access* from a small repo of their own made from
+  [`templates/access-repo`](../templates/access-repo/) (no deploy role).
+- **DNS:** Provision prints 4 nameservers and waits (up to 1h) while the client adds
+  them as NS records for `onsyte` at their DNS provider. After Teardown they remove
+  those records.
+- `dns: existing-zone` also works, when their domain's zone is already in this
+  account: set `hosted_zone` to it. `route53-registrar` doesn't apply.
+

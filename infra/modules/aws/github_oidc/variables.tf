@@ -5,8 +5,9 @@ variable "name_prefix" {
 
 # --- Deploy role trust (the app repo) ---------------------------------------
 variable "deploy_github_repo" {
-  description = "App repo allowed to assume the deploy role, in 'owner/name' form. Branch-scoped."
+  description = "App repo allowed to assume the deploy role, in 'owner/name' form. Branch-scoped. Empty = no site to deploy, so no deploy role."
   type        = string
+  default     = ""
 }
 
 variable "github_branch" {

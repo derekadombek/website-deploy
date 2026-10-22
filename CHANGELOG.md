@@ -11,6 +11,29 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
+## v1.2.0
+
+- Client file: `site: false` for a client whose website is hosted elsewhere and who
+  only gets Onsyte here. No static site and no `app_repo`; Onsyte gets its own zone
+  (`hosted_zone`, default `<onsyte_subdomain>.<domain>`), delegated with 4 NS records at
+  their DNS provider. Provision's health check checks Onsyte's address for them, and
+  Teardown reminds you to have the NS records removed.
+- *Grant AWS access*: `deploy-github-repo` is optional; without it no deploy role is
+  made. New template `templates/access-repo` for clients with no app repo.
+  Both templates point to the steps for turning on IAM Identity Center in a new account
+  (its access portal gives the short-lived admin keys).
+- New script helper `client_zone` (the zone a client's records go in), used everywhere
+  the zone name was worked out by hand.
+
+**Upgrade notes:**
+- The site stack moves from `module.site` to `module.site[0]` (a `moved` block does it).
+  The first Provision after upgrading lists every existing client as having changes:
+  only "has moved" lines, 0 to add/change/destroy. Apply once to save the move. Don't
+  change a client's domain in that same run: the zone step can't run until the move is
+  applied.
+- Re-running *Grant AWS access* with this version moves the deploy role the same way;
+  no changes. Nothing else to do.
+
 ## v1.1.0
 
 - New module `infra/modules/aws/next_app`: a Next.js app built with OpenNext, served

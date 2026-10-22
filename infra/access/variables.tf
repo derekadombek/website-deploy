@@ -9,8 +9,9 @@ variable "project_name" {
 }
 
 variable "deploy_github_repo" {
-  description = "App repo that deploys the site (deploy role trust, branch-scoped)."
+  description = "App repo that deploys the site (deploy role trust, branch-scoped). Empty = no site (e.g. Onsyte only), so no deploy role."
   type        = string
+  default     = ""
 }
 
 variable "github_branch" {

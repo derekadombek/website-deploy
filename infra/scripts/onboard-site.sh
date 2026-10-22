@@ -73,7 +73,7 @@ existing_resources() {
   # is supposed to be there.
   case "$(client_get "${ENV_NAME}" dns existing-zone)" in
     route53-registrar | external)
-      zone="$(client_get "${ENV_NAME}" hosted_zone "$(client_get "${ENV_NAME}" domain)")"
+      zone="$(client_zone "${ENV_NAME}")"
       if [ -n "${zone}" ]; then
         local zid
         zid="$(aws route53 list-hosted-zones-by-name --dns-name "${zone}" --max-items 1 \
@@ -108,15 +108,15 @@ EOF
 create_zone() {
   echo "==> creating hosted zone (if this env creates one)"
   # No-op when create_hosted_zone = false (the resource has zero instances).
-  terraform apply -input=false -auto-approve \
-    -target='module.site.aws_route53_zone.primary' \
-    -target='module.site.aws_route53domains_registered_domain.this' >/dev/null 2>&1 || true
+  local targets=(-target='module.site[0].aws_route53_zone.primary' -target='module.site[0].aws_route53domains_registered_domain.this')
+  [ "$(client_get "${ENV_NAME}" site true)" = "false" ] && targets=(-target='aws_route53_zone.app')
+  terraform apply -input=false -auto-approve "${targets[@]}" >/dev/null 2>&1 || true
 }
 
 # The zone's name, from the client file (as infra/sites/aws computes it) — not
 # `terraform output`: a targeted apply (create_zone) doesn't save outputs that
 # don't depend on a targeted resource, so on a fresh state it isn't there.
-zone_name() { client_get "${ENV_NAME}" hosted_zone "$(client_get "${ENV_NAME}" domain)"; }
+zone_name() { client_zone "${ENV_NAME}"; }
 
 zone_ns_json() { terraform output -json hosted_zone_name_servers 2>/dev/null || echo '[]'; }
 has_zone() { [ "$(zone_ns_json | tr -d '[:space:]')" != "[]" ]; }
@@ -154,6 +154,10 @@ wait_for_delegation() {
 full_apply() {
   echo "==> full apply"
   terraform apply -input=false -auto-approve
+  if [ "$(client_get "${ENV_NAME}" site true)" = "false" ]; then
+    echo "==> done. No site here: ship Onsyte with Deploy Onsyte (clients repo)."
+    return
+  fi
   echo "==> done. App repo deploy.yml (templates/client-repo/deploy.yml):"
   echo "      client-name: ${ENV_NAME}"
   echo "      aws-account-id: \"$(client_get "${ENV_NAME}" account_id)\""

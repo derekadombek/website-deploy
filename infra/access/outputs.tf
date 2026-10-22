@@ -1,5 +1,5 @@
 output "deploy_role_arn" {
-  description = "ARN of the deploy role (set as AWS_DEPLOY_ROLE_ARN on the app repo)."
+  description = "ARN of the deploy role (set as AWS_DEPLOY_ROLE_ARN on the app repo). Null without a deploy repo."
   value       = module.github_oidc.deploy_role_arn
 }
 
