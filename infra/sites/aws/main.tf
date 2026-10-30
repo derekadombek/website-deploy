@@ -107,6 +107,7 @@ output "onsyte" {
     assets_bucket        = module.onsyte[0].assets_bucket
     server_function_name = module.onsyte[0].server_function_name
     distribution_id      = module.onsyte[0].distribution_id
+    mail_from            = module.onsyte[0].mail_from
   }
 }
 

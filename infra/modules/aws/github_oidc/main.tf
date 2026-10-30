@@ -224,6 +224,27 @@ data "aws_iam_policy_document" "terraform" {
     resources = ["*"]
   }
 
+  # App email (next_app): the domain's SES identity. Identities are named by domain,
+  # not by project, so this covers the account's identities; Onsyte runs in an
+  # account of its own. No sending: only the app's Lambda role may send.
+  statement {
+    sid = "ManageEmailIdentities"
+    actions = [
+      "ses:CreateEmailIdentity", "ses:DeleteEmailIdentity", "ses:GetEmailIdentity",
+      "ses:PutEmailIdentityDkimAttributes", "ses:PutEmailIdentityDkimSigningAttributes",
+      "ses:PutEmailIdentityMailFromAttributes", "ses:PutEmailIdentityFeedbackAttributes",
+      "ses:TagResource", "ses:UntagResource", "ses:ListTagsForResource",
+    ]
+    resources = ["arn:aws:ses:*:${data.aws_caller_identity.current.account_id}:identity/*"]
+  }
+
+  # Deploy Onsyte checks whether the account is still in the SES sandbox.
+  statement {
+    sid       = "ReadEmailAccount"
+    actions   = ["ses:GetAccount"]
+    resources = ["*"]
+  }
+
   # The server Lambda runs as a <name_prefix>-* role; it may only be handed to Lambda.
   statement {
     sid       = "PassProjectRolesToLambda"

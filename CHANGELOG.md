@@ -11,6 +11,23 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
+## v1.3.0
+
+- Onsyte (`next_app`) can send email: an SES identity for `<onsyte_subdomain>.<domain>`
+  with DKIM, a `mail.` MAIL FROM subdomain (SPF) and a report-only DMARC record, all in
+  the app's zone. The Lambda may send only as `no-reply@<that domain>`. The `onsyte`
+  output gains `mail_from`. Used for password-reset emails (Onsyte v0.4.0).
+- Terraform role: manage SES identities, read the account's SES status. Plan role:
+  read them.
+
+**Upgrade notes:**
+- Re-run *Grant AWS access* for every Onsyte client (new SES permissions) before the
+  first Provision on this version.
+- Provision adds 6 DNS records and the SES identity per Onsyte install.
+- One-time per install: Supabase sign-up off, and SES production access (`clients/README.md`,
+  "Onsyte installs: one-time steps"). Deploy Onsyte in the clients repo needs the matching
+  update (sets `MAIL_FROM` / `APP_URL`, checks both).
+
 ## v1.2.0
 
 - Client file: `site: false` for a client whose website is hosted elsewhere and who

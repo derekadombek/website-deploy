@@ -17,3 +17,8 @@ output "distribution_id" {
   description = "CloudFront distribution ID (the deploy workflow invalidates it)."
   value       = aws_cloudfront_distribution.app.id
 }
+
+output "mail_from" {
+  description = "Address the app sends email from (the deploy workflow sets it as MAIL_FROM)."
+  value       = local.mail_from
+}

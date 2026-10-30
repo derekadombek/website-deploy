@@ -3,6 +3,9 @@
 #   viewer ─► CloudFront ─┬─ /_next/static/* ─► S3 assets bucket (OAC, private)
 #                         └─ everything else  ─► API Gateway (HTTP API) ─► Lambda
 #
+# The Lambda can also send email (password resets) from no-reply@<domain> through
+# SES in this account, signed with DKIM records in the app's zone.
+#
 # Terraform owns the infrastructure only. The app's code and its settings (the
 # Lambda zip and environment, the files in the assets bucket) are shipped by a
 # deploy workflow, so a release is a workflow run, not an apply, and secrets
@@ -20,6 +23,7 @@ data "aws_region" "current" {}
 
 locals {
   server_name = "${var.name_prefix}-server"
+  mail_from   = "no-reply@${var.domain}"
 }
 
 # --- Static assets (/_next/static/*) ----------------------------------------
@@ -115,6 +119,19 @@ data "aws_iam_policy_document" "server" {
     sid       = "WriteLogs"
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
     resources = ["${aws_cloudwatch_log_group.server.arn}:*"]
+  }
+
+  # Only from the app's own address.
+  statement {
+    sid       = "SendEmail"
+    actions   = ["ses:SendEmail"]
+    resources = [aws_sesv2_email_identity.app.arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "ses:FromAddress"
+      values   = [local.mail_from]
+    }
   }
 }
 
@@ -336,4 +353,57 @@ resource "aws_route53_record" "aaaa" {
     zone_id                = aws_cloudfront_distribution.app.hosted_zone_id
     evaluate_target_health = false
   }
+}
+
+# --- Email (SES) -----------------------------------------------------------------
+
+# The app's domain as a sending identity. DKIM signs every message, which is what
+# lets it reach inboxes. A new AWS account starts in the SES sandbox (sends only to
+# verified addresses) until production access is requested once; Deploy Onsyte
+# warns while it is.
+resource "aws_sesv2_email_identity" "app" {
+  email_identity = var.domain
+}
+
+resource "aws_route53_record" "dkim" {
+  count   = 3
+  zone_id = var.hosted_zone_id
+  name    = "${aws_sesv2_email_identity.app.dkim_signing_attributes[0].tokens[count.index]}._domainkey.${var.domain}"
+  type    = "CNAME"
+  ttl     = 1800
+  records = ["${aws_sesv2_email_identity.app.dkim_signing_attributes[0].tokens[count.index]}.dkim.amazonses.com"]
+}
+
+# Bounces go to mail.<domain>, so SPF passes for our own subdomain instead of
+# amazonses.com, and DMARC lines up on both SPF and DKIM.
+resource "aws_sesv2_email_identity_mail_from_attributes" "app" {
+  email_identity         = aws_sesv2_email_identity.app.email_identity
+  mail_from_domain       = "mail.${var.domain}"
+  behavior_on_mx_failure = "USE_DEFAULT_VALUE"
+}
+
+resource "aws_route53_record" "mail_from_mx" {
+  zone_id = var.hosted_zone_id
+  name    = "mail.${var.domain}"
+  type    = "MX"
+  ttl     = 1800
+  records = ["10 feedback-smtp.${data.aws_region.current.name}.amazonses.com"]
+}
+
+resource "aws_route53_record" "mail_from_spf" {
+  zone_id = var.hosted_zone_id
+  name    = "mail.${var.domain}"
+  type    = "TXT"
+  ttl     = 1800
+  records = ["v=spf1 include:amazonses.com ~all"]
+}
+
+# p=none: report only. Tighten to quarantine once a client's mail has been seen
+# passing.
+resource "aws_route53_record" "dmarc" {
+  zone_id = var.hosted_zone_id
+  name    = "_dmarc.${var.domain}"
+  type    = "TXT"
+  ttl     = 1800
+  records = ["v=DMARC1; p=none"]
 }

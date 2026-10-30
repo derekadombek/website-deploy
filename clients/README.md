@@ -42,7 +42,8 @@ state_bucket: acme-tf-state      # [<name>-tf-state] Terraform state, in their a
 state_lock: s3                   # [dynamodb] how state is locked — see below
 lock_table: acme-tf-locks        # [<name>-tf-locks] only for state_lock dynamodb/both
 onsyte_subdomain: onsyte         # [none] install Onsyte at onsyte.<domain> (needs domain;
-                                 # needs grant-access from v1.1.0 or later)
+                                 # needs grant-access from v1.3.0 or later; see "Onsyte
+                                 # installs" below for the one-time steps)
 onsyte_version: v0.1.0           # Onsyte release that Deploy Onsyte (clients repo) ships
 ```
 
@@ -94,3 +95,27 @@ onsyte_version: v0.3.0
 - `dns: existing-zone` also works, when their domain's zone is already in this
   account: set `hosted_zone` to it. `route53-registrar` doesn't apply.
 
+
+## Onsyte installs: one-time steps
+
+Two settings outside Terraform, done once per install. Deploy Onsyte checks the
+first and warns about the second.
+
+1. **Supabase sign-up off.** In the client's Supabase project, under Authentication,
+   turn off *Allow new users to sign up*. Leave the **Email provider on** (turning
+   it off blocks every sign-in). Onsyte creates accounts itself (first-run signup,
+   invites), which works with sign-up off; with it on, anyone holding the public
+   key in the page can create accounts. While there: minimum password length 10
+   with letters and digits, and turn on leaked-password protection (Pro plan).
+   Deploy Onsyte stops if sign-up is still on.
+2. **SES production access.** A new AWS account can only email addresses verified
+   in SES (the sandbox) until it asks once. Onsyte needs it for password-reset
+   emails. From the client's account (their access-portal keys, like *Grant AWS
+   access*), in the client's region, run:
+
+   ```
+   aws sesv2 put-account-details --region us-west-2 --production-access-enabled --mail-type TRANSACTIONAL --contact-language EN --website-url https://onsyte.acme.com --use-case-description "Password-reset emails from the company's own internal Onsyte tool to its staff. A few a month, only to people on the team; no marketing or bulk mail."
+   ```
+
+   AWS usually answers within a day. Until then Deploy Onsyte warns, and reset emails
+   reach only addresses verified in SES.
