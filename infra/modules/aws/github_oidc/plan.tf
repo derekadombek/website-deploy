@@ -87,6 +87,7 @@ data "aws_iam_policy_document" "plan" {
       "route53:Get*", "route53:List*",
       "route53domains:Get*", "route53domains:List*",
       "apigateway:GET", "logs:DescribeLogGroups", "logs:ListTagsForResource", "logs:ListTagsLogGroup",
+      "ses:GetEmailIdentity", "ses:ListTagsForResource", "ses:GetAccount",
     ]
     resources = ["*"]
   }
