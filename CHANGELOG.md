@@ -18,8 +18,9 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
   S3 bucket) and `onboarding-link.sh` (prints a client's link).
 - *Onboard Client's AWS Account* (`onboard-client-aws.yml`, reusable): signs in through
   the onboarding role, runs `grant-access.sh` with everything taken from the client file
-  (app repo and its ids, state bucket, lock table, delegation zone) and deletes the
-  onboarding stack. *Grant AWS access* is unchanged and stays as the fallback.
+  (app repo and its ids, state bucket, lock table, delegation zone), deletes the
+  onboarding stack, then removes the onboarding role with the client's Terraform role
+  (a role can't delete itself, so the stack keeps it). *Grant AWS access* is unchanged and stays as the fallback.
 
 **Upgrade notes:**
 - Clients repo: add `onboard.yml` (calls this workflow; its `client` dropdown must list

@@ -4,7 +4,7 @@ name: Onboard Client's AWS Account
 # stack from their link (infra/scripts/onboarding-link.sh), which left a temporary
 # <name>-onboarding admin role that only this repo's <name> environment can use.
 # This signs in through it, runs grant-access.sh (state bucket + the usual roles,
-# the same Terraform as the aws-grant-access action) and deletes the stack, which
+# the same Terraform as the aws-grant-access action), deletes the stack and then
 # removes the onboarding role. Re-granting after a role change is the same: a new
 # link, then this.
 #
@@ -17,9 +17,9 @@ name: Onboard Client's AWS Account
 #   - lock table: only for state_lock dynamodb / both.
 #   - delegation role: when another client has delegate_from: <name>.
 #
-# The stack is deleted with the onboarding role's own credentials, and the
-# template deletes that role last, so losing access at the end is the expected
-# finish, not an error.
+# A role can't delete itself, so deleting the stack keeps the onboarding role
+# (DeletionPolicy: Retain) and the client's <client>-terraform role, just made by
+# grant-access, removes it (it may delete <client>-* roles and inline policies).
 on:
   workflow_call:
     inputs:
@@ -213,21 +213,49 @@ jobs:
             out="$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" \
               --query 'Stacks[0].StackStatus' --output text 2>&1)"
             case "$out" in
-              DELETE_COMPLETE | *"does not exist"*) result="stack deleted" ;;
-              # The onboarding role goes last, so losing access means the delete reached its end.
-              *AccessDenied* | *"not authorized"* | *ExpiredToken* | *InvalidClientTokenId*) result="stack deleted (onboarding role removed)" ;;
+              DELETE_COMPLETE | *"does not exist"*)
+                echo "Stack deleted (the onboarding role is kept for the next step)"
+                exit 0 ;;
               DELETE_FAILED)
-                echo "::error::Deleting $stack failed. Ask the client to open CloudFormation, select $stack and delete it again."
-                echo "### Onboarding stack $stack: DELETE_FAILED, the client must delete it by hand" >> "$GITHUB_STEP_SUMMARY"
+                echo "Why:"
+                aws cloudformation describe-stack-events --stack-name "$stack" --region "$REGION" \
+                  --query "StackEvents[?ResourceStatus=='DELETE_FAILED'].[LogicalResourceId,ResourceStatusReason]" --output text || true
+                echo "::error::Deleting $stack failed (reasons above). Ask the client to open CloudFormation ($REGION), select $stack and delete it again."
+                echo "### Access granted, but deleting the onboarding stack failed: see the log" >> "$GITHUB_STEP_SUMMARY"
                 exit 1 ;;
-              *) echo "  $out"; continue ;;
+              *) echo "  $out" ;;
             esac
-            echo "$result"
-            {
-              echo "### Access granted; $result"
-              echo "Next: Provision (the client file is already in place)."
-            } >> "$GITHUB_STEP_SUMMARY"
-            exit 0
           done
-          echo "::error::$stack still deleting after 10 minutes; check it in the client's CloudFormation console"
+          echo "::error::$stack still deleting after 10 minutes; check it in the client's CloudFormation console ($REGION)"
           exit 1
+
+      # A role can't delete itself, so the stack keeps it (DeletionPolicy: Retain)
+      # and the client's Terraform role, which may manage <client>-* roles, removes it.
+      - name: Switch to the client's Terraform role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ steps.client.outputs.account }}:role/${{ inputs.client }}-terraform
+          aws-region: ${{ steps.client.outputs.region }}
+      - name: Remove the onboarding role
+        run: |
+          set -euo pipefail
+          role="$CLIENT-onboarding"
+          if ! aws iam get-role --role-name "$role" >/dev/null 2>&1; then
+            echo "$role is already gone"
+          else
+            attached="$(aws iam list-attached-role-policies --role-name "$role" --query 'AttachedPolicies[].PolicyArn' --output text)"
+            if [ -n "$attached" ] && [ "$attached" != "None" ]; then
+              echo "::error::$role has attached policies ($attached), so it's from an older template; the Terraform role can't detach them. Delete $role by hand in IAM."
+              echo "### Access granted; delete $role by hand in IAM (older template)" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+            for p in $(aws iam list-role-policies --role-name "$role" --query 'PolicyNames[]' --output text); do
+              aws iam delete-role-policy --role-name "$role" --policy-name "$p"
+            done
+            aws iam delete-role --role-name "$role"
+            echo "Removed $role"
+          fi
+          {
+            echo "### Access granted; onboarding stack and role removed"
+            echo "Next: Provision (the client file is already in place)."
+          } >> "$GITHUB_STEP_SUMMARY"
