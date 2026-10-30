@@ -1,0 +1,168 @@
+AWSTemplateFormatVersion: "2010-09-09"
+# One-click Connect AWS: the stack a client creates from their onboarding link
+# (infra/scripts/onboarding-link.sh prints it; publish-onboarding-template.sh
+# publishes this file). It makes ONE thing that matters: a temporary
+# <client>-onboarding admin role that only the management repo can use, only in
+# that client's GitHub environment, and only until the expiry date. Onboard client
+# (in the management repo) signs in through it, runs grant-access.sh (the usual
+# three roles, defined only in Terraform) and deletes this stack.
+#
+# The GitHub OIDC provider: an account can only have one. A small custom resource
+# creates it if missing and reuses it if present, and leaves it in place when the
+# stack is deleted, so the access Terraform (which reuses an existing provider)
+# keeps working.
+#
+# Delete order matters: the stack is deleted with the onboarding role's own
+# credentials, so that role must go LAST. Every helper resource depends on it
+# (DependsOn), which makes CloudFormation delete them first.
+Description: >-
+  Lets Derek Dombek's setup connect to this AWS account once, to create the roles
+  that manage your website. Temporary: removed automatically when setup finishes,
+  and unusable after the expiry date.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label: { default: "Filled in for you. No changes needed." }
+        Parameters: [ClientName, ExpiresAt]
+    ParameterLabels:
+      ClientName: { default: "Client name" }
+      ExpiresAt: { default: "Access expires (UTC)" }
+
+Parameters:
+  ClientName:
+    Type: String
+    Description: Your client name in Derek's setup (from the link).
+    AllowedPattern: "^[a-z0-9][a-z0-9-]{0,40}[a-z0-9]$"
+    ConstraintDescription: "lowercase letters, numbers and dashes only, 2 or more characters, e.g. bobs-plumbing (the link fills this in)."
+  ExpiresAt:
+    Type: String
+    Description: After this time the temporary role can't be used, even if it's still here.
+    AllowedPattern: "^20[0-9]{2}-[0-1][0-9]-[0-3][0-9]T[0-2][0-9]:[0-5][0-9]:[0-5][0-9]Z$"
+    ConstraintDescription: "a future UTC time in exactly this form: 2026-11-06T00:00:00Z (the link fills this in)."
+
+Resources:
+  # Trusts the management repo (classic subject and GitHub's immutable
+  # owner@id/name@id one, as the Terraform role does), environment-scoped, and only
+  # before ExpiresAt. The provider ARN is predictable, so the trust doesn't
+  # reference the custom resource (which would make this role go first on delete).
+  OnboardingRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${ClientName}-onboarding"
+      Description: !Sub "Temporary: lets derekadombek/website-deploy-clients set up access for ${ClientName}. Expires ${ExpiresAt}; removed when setup finishes."
+      MaxSessionDuration: 3600
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                token.actions.githubusercontent.com:sub:
+                  - !Sub "repo:derekadombek/website-deploy-clients:environment:${ClientName}"
+                  - !Sub "repo:derekadombek@50093944/website-deploy-clients@1416158874:environment:${ClientName}"
+              DateLessThan:
+                aws:CurrentTime: !Ref ExpiresAt
+      Tags:
+        - { Key: managed-by, Value: website-deploy-onboarding }
+
+  GitHubOidcLogs:
+    Type: AWS::Logs::LogGroup
+    DependsOn: OnboardingRole
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${ClientName}-onboarding-oidc"
+      RetentionInDays: 1
+
+  GitHubOidcFunctionRole:
+    Type: AWS::IAM::Role
+    DependsOn: OnboardingRole
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: github-oidc-provider
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:ListOpenIDConnectProviders
+                  - iam:CreateOpenIDConnectProvider
+                  - iam:TagOpenIDConnectProvider
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: !GetAtt GitHubOidcLogs.Arn
+
+  GitHubOidcFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub "${ClientName}-onboarding-oidc"
+      Description: Creates the GitHub OIDC provider if this account has none (setup only).
+      Runtime: python3.13
+      Handler: index.handler
+      Timeout: 60
+      Role: !GetAtt GitHubOidcFunctionRole.Arn
+      LoggingConfig:
+        LogGroup: !Ref GitHubOidcLogs
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+
+          HOST = "token.actions.githubusercontent.com"
+          # Same as infra/modules/aws/github_oidc (AWS no longer checks it for GitHub).
+          THUMBPRINT = "6938fd4d98bab03faadb97b34396831e3780aea1"
+
+          def handler(event, context):
+              # Delete: keep the provider; the access Terraform reuses it.
+              if event["RequestType"] == "Delete":
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, "github-oidc-provider")
+                  return
+              try:
+                  iam = boto3.client("iam")
+                  arns = [p["Arn"] for p in iam.list_open_id_connect_providers()["OpenIDConnectProviderList"]]
+                  arn = next((a for a in arns if a.endswith("/" + HOST)), None)
+                  if arn:
+                      result = "reused"
+                  else:
+                      arn = iam.create_open_id_connect_provider(
+                          Url="https://" + HOST,
+                          ClientIDList=["sts.amazonaws.com"],
+                          ThumbprintList=[THUMBPRINT],
+                          Tags=[{"Key": "managed-by", "Value": "website-deploy-onboarding"}],
+                      )["OpenIDConnectProviderArn"]
+                      result = "created"
+                  print(f"GitHub OIDC provider {result}: {arn}")
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {"Arn": arn, "Result": result}, "github-oidc-provider")
+              except Exception as e:
+                  print(f"failed: {e}")
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {}, "github-oidc-provider", reason=str(e)[:200])
+
+  GitHubOidcProvider:
+    Type: Custom::GitHubOidcProvider
+    Properties:
+      ServiceToken: !GetAtt GitHubOidcFunction.Arn
+
+Outputs:
+  AccountId:
+    Description: Send this number to Derek.
+    Value: !Ref AWS::AccountId
+  OnboardingRoleArn:
+    Description: The temporary role (removed when setup finishes).
+    Value: !GetAtt OnboardingRole.Arn
+  GitHubConnection:
+    Description: Whether the GitHub sign-in connection was created or already here (it stays after setup).
+    Value: !GetAtt GitHubOidcProvider.Result
