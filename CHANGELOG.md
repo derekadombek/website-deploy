@@ -11,6 +11,13 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
+- One-click Connect AWS, first part: the CloudFormation template a client creates from
+  a link (`infra/onboarding/connect-aws.yaml`: a temporary, expiring
+  `<client>-onboarding` role for the clients repo, plus the GitHub OIDC provider if
+  missing), `publish-onboarding-template.sh` (puts a release's template in a public
+  S3 bucket) and `onboarding-link.sh` (prints a client's link). Not usable until the
+  Onboard client workflow exists; *Grant AWS access* is unchanged.
+
 ## v1.3.0
 
 - Onsyte (`next_app`) can send email: an SES identity for `<onsyte_subdomain>.<domain>`
