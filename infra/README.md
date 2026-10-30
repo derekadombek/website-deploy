@@ -104,14 +104,17 @@ are no ARNs to copy between steps.
 
 Your **own** sites follow the same flow.
 
-**Coming: One-click Connect AWS** (replaces the client's side of step 1; not usable
-yet, the Onboard client workflow isn't built). The client opens a link in their AWS
-console and clicks **Create stack**; no keys. The stack
+**One-click Connect AWS** (replaces the client's side of step 1; *Grant AWS access*
+stays as the fallback). The client opens a link in their AWS console and clicks
+**Create stack**; no keys. The stack
 ([`onboarding/connect-aws.yaml`](onboarding/connect-aws.yaml)) makes a temporary
 `<name>-onboarding` admin role that only the clients repo's `<name>` environment can
 use, until an expiry date, plus the GitHub OIDC provider if the account has none
-(kept on stack delete). Onboard client will sign in through it, run `grant-access.sh`
-and delete the stack. Publish the template once per release, then print a client's link:
+(kept on stack delete). Then: add the client file with their account id (step 2),
+and run **Onboard Client's AWS Account** in the clients repo. It signs in through the
+onboarding role, runs `grant-access.sh` with everything from the client file, and
+deletes the stack. Then Provision (step 3). Publish the template once per release,
+then print a client's link:
 
 ```bash
 AWS_PROFILE=derek infra/scripts/publish-onboarding-template.sh v1.4.0
