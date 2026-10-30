@@ -178,20 +178,33 @@ jobs:
             ${DELEGATION_ZONE:+--delegation-zone "$DELEGATION_ZONE"}
 
       # Ask CloudFormation which stack owns the role, so a stack the client named
-      # differently is still found. (It doesn't tag IAM roles with the stack name.)
+      # differently is still found (it doesn't tag IAM roles with the stack name).
+      # The link puts it in the client file's region; look there first, then in
+      # every other region, in case it was created by hand somewhere else.
       - name: Delete the onboarding stack
         env:
           REGION: ${{ steps.client.outputs.region }}
         run: |
           set -uo pipefail
-          stack="$(aws cloudformation describe-stack-resources --region "$REGION" \
-            --physical-resource-id "$CLIENT-onboarding" \
-            --query 'StackResources[0].StackName' --output text 2>&1)" || stack=""
-          if [ -z "$stack" ] || [ "$stack" = "None" ] || [[ "$stack" == *rror* ]]; then
-            echo "::error::No stack in $REGION owns $CLIENT-onboarding (${stack:-no answer}). Was it created in another region? Ask the client to delete it in CloudFormation."
-            echo "### Access granted, but the onboarding stack wasn't found in $REGION: delete it by hand" >> "$GITHUB_STEP_SUMMARY"
+          stack="" last_err=""
+          others="$(aws ec2 describe-regions --region "$REGION" --query 'Regions[].RegionName' --output text 2>&1)" \
+            || { echo "Can't list regions ($others); looking in $REGION only"; others=""; }
+          for r in "$REGION" $(tr -s '\t ' '\n' <<<"$others" | grep -vx "$REGION"); do
+            if out="$(aws cloudformation describe-stack-resources --region "$r" \
+              --physical-resource-id "$CLIENT-onboarding" \
+              --query 'StackResources[0].StackName' --output text 2>&1)" \
+              && [ -n "$out" ] && [ "$out" != "None" ]; then
+              stack="$out"; REGION="$r"; break
+            fi
+            [ -n "$last_err" ] || last_err="$out"
+          done
+          if [ -z "$stack" ]; then
+            echo "AWS said (in the client's region): $last_err"
+            echo "::error::No CloudFormation stack in any region owns $CLIENT-onboarding. Ask the client to delete the onboarding stack in CloudFormation (or delete the role in IAM if there's no stack)."
+            echo "### Access granted, but the onboarding stack wasn't found: delete it by hand" >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
+          echo "Found stack $stack in $REGION"
           aws cloudformation delete-stack --stack-name "$stack" --region "$REGION" || exit 1
           echo "Deleting stack $stack"
 
