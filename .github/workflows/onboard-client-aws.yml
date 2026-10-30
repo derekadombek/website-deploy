@@ -86,6 +86,7 @@ jobs:
         id: client
         env:
           GH_TOKEN: ${{ secrets.APP_REPO_READ_TOKEN || github.token }}
+          TOKEN_NAME: ${{ secrets.APP_REPO_READ_TOKEN != '' && 'APP_REPO_READ_TOKEN' || 'the default GITHUB_TOKEN (no APP_REPO_READ_TOKEN passed)' }}
         run: |
           set -euo pipefail
           source infra/scripts/lib/client.sh
@@ -100,8 +101,10 @@ jobs:
             [ -n "$app_repo" ] || { echo "::error::clients/$CLIENT.yaml has a site but no app_repo"; exit 1; }
             # Without the ids the deploy role would lose the immutable subject
             # newer repos sign in with, so don't carry on without them.
-            app_ids="$(gh api "repos/$app_repo" --jq '"\(.owner.id)/\(.id)"' 2>/dev/null)" || {
-              echo "::error::Can't read $app_repo to look up its ids. For a private repo, add the APP_REPO_READ_TOKEN secret (fine-grained PAT, read access to that repo)."
+            echo "Looking up $app_repo with $TOKEN_NAME"
+            app_ids="$(gh api "repos/$app_repo" --jq '"\(.owner.id)/\(.id)"' 2>lookup.err)" || {
+              echo "GitHub said: $(cat lookup.err)"
+              echo "::error::Can't read $app_repo to look up its ids. For a private repo, the APP_REPO_READ_TOKEN secret must be a fine-grained PAT whose repository access includes $app_repo (404 = not included or wrong owner, 401 = bad or expired token)."
               exit 1
             }
           fi
@@ -174,16 +177,21 @@ jobs:
             ${APP_IDS:+--deploy-repo-ids "$APP_IDS"} \
             ${DELEGATION_ZONE:+--delegation-zone "$DELEGATION_ZONE"}
 
-      # The stack's name is on the role (CloudFormation tags it), so a stack the
-      # client named differently is still found.
+      # Ask CloudFormation which stack owns the role, so a stack the client named
+      # differently is still found. (It doesn't tag IAM roles with the stack name.)
       - name: Delete the onboarding stack
         env:
           REGION: ${{ steps.client.outputs.region }}
         run: |
           set -uo pipefail
-          stack="$(aws iam list-role-tags --role-name "$CLIENT-onboarding" \
-            --query "Tags[?Key=='aws:cloudformation:stack-name'].Value" --output text)"
-          [ -n "$stack" ] && [ "$stack" != "None" ] || { echo "::error::$CLIENT-onboarding has no stack tag; delete the role and its stack by hand"; exit 1; }
+          stack="$(aws cloudformation describe-stack-resources --region "$REGION" \
+            --physical-resource-id "$CLIENT-onboarding" \
+            --query 'StackResources[0].StackName' --output text 2>&1)" || stack=""
+          if [ -z "$stack" ] || [ "$stack" = "None" ] || [[ "$stack" == *rror* ]]; then
+            echo "::error::No stack in $REGION owns $CLIENT-onboarding (${stack:-no answer}). Was it created in another region? Ask the client to delete it in CloudFormation."
+            echo "### Access granted, but the onboarding stack wasn't found in $REGION: delete it by hand" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           aws cloudformation delete-stack --stack-name "$stack" --region "$REGION" || exit 1
           echo "Deleting stack $stack"
 
