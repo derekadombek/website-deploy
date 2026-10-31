@@ -1,0 +1,245 @@
+name: Offboard Client's AWS Account
+
+# Removes your access to a client's AWS account when they leave. Their site keeps
+# running and the state bucket stays, so a future engineer can pick it up.
+#
+# Signs in as <client>-terraform and:
+#   1. deletes the access roles by name: -plan, -github-deploy, -dns-delegation,
+#      and -onboarding if one was left behind. Not every <client>-* role: an
+#      Onsyte install has Lambda roles with the same prefix, which the site needs.
+#   2. leaves a note (OFFBOARDED.md) at the root of the state bucket.
+#   3. locks <client>-terraform: a trust policy nobody can use, then its only
+#      (inline) policy removed. A role can't delete itself, so this is the end
+#      state: an empty role, tagged `offboarded`, that the client can delete.
+#   4. deletes the client's GitHub Environment (needs REGISTER_CI_TOKEN; without
+#      it, delete it by hand).
+#
+# Kept on purpose: the site, the state bucket (+ lock table), the GitHub OIDC
+# provider (it grants nothing alone; the client may use it) and Onsyte's roles.
+# Then remove clients/<name>.yaml in a PR. Undo: a new Connect AWS link + Onboard.
+on:
+  workflow_call:
+    inputs:
+      package_ref:
+        description: website-deploy ref to run (the same tag/sha as in your `uses:` line).
+        type: string
+        required: true
+      client:
+        description: Client to offboard (one at a time; no "all").
+        type: string
+        required: true
+      confirm:
+        description: Retype the client name to confirm.
+        type: string
+        required: true
+    secrets:
+      REGISTER_CI_TOKEN:
+        description: The clients repo's PAT (Administration + Environments write), to delete the client's GitHub Environment.
+        required: false
+
+permissions:
+  id-token: write # OIDC token to assume the client's Terraform role
+  contents: read
+
+# Called from the private clients repo (workflow_call) — it isn't run here. Its
+# clients/ is checked out at the workspace root, this package at package_ref
+# into pkg/.
+env:
+  CLIENTS_DIR: ${{ github.workspace }}/clients
+  CLIENT: ${{ inputs.client }}
+
+defaults:
+  run:
+    working-directory: pkg
+
+# Shared with Provision / Teardown / Unlock / Onboard: one Terraform run at a time.
+concurrency:
+  group: terraform
+  cancel-in-progress: false
+
+jobs:
+  # Fail fast on a typo'd/invalid client BEFORE any job names it as an
+  # environment (GitHub would silently create an unprotected one).
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # the calling repo: clients/ + its workflows (dropdowns)
+        with:
+          sparse-checkout: |
+            clients
+            .github/workflows
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref
+        with:
+          repository: derekadombek/website-deploy
+          ref: ${{ inputs.package_ref }}
+          path: pkg
+      - name: Check client file
+        run: |
+          set -euo pipefail
+          source infra/scripts/lib/client.sh
+          client_dropdowns_check "${GITHUB_WORKSPACE}/.github/workflows"
+          client_check "$CLIENT"
+          # Its -dns-delegation role is how those clients' Provision adds their NS record.
+          for c in $(client_list aws); do
+            if [ "$(client_get "$c" delegate_from)" = "$CLIENT" ]; then
+              echo "::error::$c delegates its subdomain from $CLIENT's zone (delegate_from: $CLIENT). Move or offboard $c first."
+              exit 1
+            fi
+          done
+
+  offboard:
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: ${{ inputs.client }} # scoped AWS_TF_ROLE_ARN (+ approval, if it has reviewers)
+    steps:
+      - name: Guard — owner + confirmation
+        working-directory: . # before checkout: pkg/ isn't there yet
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+        run: |
+          if [ "${{ github.actor }}" != "derekadombek" ]; then
+            echo "::error::Only the repo owner may run this workflow (actor: ${{ github.actor }})."; exit 1
+          fi
+          if [ "$CONFIRM" != "$CLIENT" ]; then
+            echo "::error::Confirmation '$CONFIRM' does not match client '$CLIENT'. Aborting."; exit 1
+          fi
+
+      - uses: actions/checkout@v4 # the calling repo: clients/
+        with:
+          sparse-checkout: clients
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref
+        with:
+          repository: derekadombek/website-deploy
+          ref: ${{ inputs.package_ref }}
+          path: pkg
+
+      - name: Read client file
+        id: client
+        run: |
+          set -euo pipefail
+          source infra/scripts/lib/client.sh
+          [ "$(client_get "$CLIENT" provider)" = "aws" ] || { echo "::error::$CLIENT isn't an AWS client"; exit 1; }
+          {
+            echo "account=$(client_get "$CLIENT" account_id)"
+            echo "region=$(client_get "$CLIENT" region)"
+            echo "state_bucket=$(client_get "$CLIENT" state_bucket "$CLIENT-tf-state")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Sign in as the client's Terraform role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ steps.client.outputs.account }}:role/${{ inputs.client }}-terraform
+          aws-region: ${{ steps.client.outputs.region }}
+
+      - name: Remove the access roles
+        run: |
+          set -euo pipefail
+          for role in "$CLIENT-plan" "$CLIENT-github-deploy" "$CLIENT-dns-delegation" "$CLIENT-onboarding"; do
+            if ! aws iam get-role --role-name "$role" >/dev/null 2>&1; then
+              echo "$role: not there"
+              continue
+            fi
+            attached="$(aws iam list-attached-role-policies --role-name "$role" --query 'AttachedPolicies[].PolicyArn' --output text)"
+            if [ -n "$attached" ] && [ "$attached" != "None" ]; then
+              echo "::warning::$role has attached policies ($attached), which this role can't detach. Ask the client to delete $role in IAM."
+              echo "- $role: **left**, the client deletes it in IAM (attached policies)" >> removed.md
+              continue
+            fi
+            for p in $(aws iam list-role-policies --role-name "$role" --query 'PolicyNames[]' --output text); do
+              aws iam delete-role-policy --role-name "$role" --policy-name "$p"
+            done
+            aws iam delete-role --role-name "$role"
+            echo "$role: removed"
+            echo "- $role: removed" >> removed.md
+          done
+          touch removed.md
+
+      - name: Leave a note in the state bucket
+        env:
+          ACCOUNT: ${{ steps.client.outputs.account }}
+          STATE_BUCKET: ${{ steps.client.outputs.state_bucket }}
+        run: |
+          set -euo pipefail
+          {
+            echo "# $CLIENT: offboarded $(date -u +%Y-%m-%d)"
+            echo
+            echo "Derek Dombek's access to account $ACCOUNT was removed on this date."
+            echo "The site was left running. Terraform state for it is kept here for whoever"
+            echo "manages it next:"
+            echo
+            echo "- \`sites/$CLIENT/terraform.tfstate\`: the site (and Onsyte, if installed)."
+            echo "  Built with https://github.com/derekadombek/website-deploy (infra/sites/aws)."
+            echo "- \`access/terraform.tfstate\`: the access roles. Out of date now: the roles"
+            echo "  it lists were deleted by hand when access was removed."
+            echo
+            echo "Removed:"
+            cat removed.md
+            echo
+            echo "Left in place: the GitHub OIDC provider (grants nothing on its own) and"
+            echo "\`$CLIENT-terraform\`, emptied: no permissions and a trust policy nobody can"
+            echo "use. It's safe to delete in IAM."
+          } > OFFBOARDED.md
+          aws s3 cp OFFBOARDED.md "s3://$STATE_BUCKET/OFFBOARDED.md"
+
+      # Last AWS step: once the inline policy is gone, this session can't call AWS.
+      # Trust first, so nobody can sign in again even if a later call fails.
+      - name: Lock the Terraform role
+        run: |
+          set -euo pipefail
+          role="$CLIENT-terraform"
+          aws iam tag-role --role-name "$role" --tags \
+            "Key=offboarded,Value=$(date -u +%Y-%m-%d)" "Key=note,Value=No permissions and no trust. Safe to delete."
+          aws iam update-assume-role-policy --role-name "$role" --policy-document \
+            '{"Version":"2012-10-17","Statement":[{"Sid":"Offboarded","Effect":"Deny","Principal":{"AWS":"*"},"Action":["sts:AssumeRole","sts:AssumeRoleWithWebIdentity","sts:AssumeRoleWithSAML"]}]}'
+          echo "$role: trust locked"
+          for p in $(aws iam list-role-policies --role-name "$role" --query 'PolicyNames[]' --output text); do
+            aws iam delete-role-policy --role-name "$role" --policy-name "$p"
+          done
+          echo "$role: permissions removed"
+          # IAM changes take a few seconds to reach every endpoint.
+          for _ in $(seq 1 12); do
+            if ! aws iam get-role --role-name "$role" >/dev/null 2>&1; then
+              echo "Confirmed: this session can no longer read IAM"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::$role can still read IAM a minute after its policy was removed. Check it in the client's IAM console."
+          exit 1
+
+      - name: Delete the GitHub Environment
+        env:
+          GH_TOKEN: ${{ secrets.REGISTER_CI_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::No REGISTER_CI_TOKEN passed: delete the $CLIENT environment by hand (Settings → Environments)."
+            echo "ENV_RESULT=left, delete it by hand" >> "$GITHUB_ENV"
+            exit 0
+          fi
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/environments/$CLIENT"
+          echo "ENV_RESULT=deleted" >> "$GITHUB_ENV"
+
+      - name: Summary
+        env:
+          ACCOUNT: ${{ steps.client.outputs.account }}
+          STATE_BUCKET: ${{ steps.client.outputs.state_bucket }}
+        run: |
+          {
+            echo "### $CLIENT offboarded (account $ACCOUNT)"
+            cat removed.md
+            echo "- $CLIENT-terraform: locked and emptied (no trust, no permissions)"
+            echo "- GitHub Environment $CLIENT: $ENV_RESULT"
+            echo "- Kept: the site, s3://$STATE_BUCKET (note: OFFBOARDED.md), the OIDC provider"
+            echo
+            echo "**Next:** remove clients/$CLIENT.yaml in a PR (wait for the dropdown commit, then merge)."
+            echo
+            echo "**For the client** (paste as is):"
+            echo
+            echo "> My access to your AWS account ($ACCOUNT) has been removed. Your site keeps"
+            echo "> running. You can delete the IAM role \`$CLIENT-terraform\` whenever you like:"
+            echo "> it no longer has any permissions and nobody can use it."
+            echo "> The S3 bucket \`$STATE_BUCKET\` holds the records a future developer needs to"
+            echo "> manage the site; keep it. If GitHub access was set up for your app repo,"
+            echo "> remove me as a collaborator there."
+          } >> "$GITHUB_STEP_SUMMARY"

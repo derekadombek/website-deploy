@@ -11,6 +11,19 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
+## v1.6.0
+
+- *Offboard Client's AWS Account* (`offboard-client-aws.yml`, reusable): removes your
+  access when a client leaves, keeping their site running and their state bucket.
+  Deletes the access roles by name (not Onsyte's), locks and empties
+  `<client>-terraform`, writes `OFFBOARDED.md` to the state bucket, deletes the GitHub
+  Environment and prints a note for the client. Refuses a client that others
+  delegate DNS from.
+
+**Upgrade notes:**
+- Clients repo: add `offboard.yml` (calls this; pass `REGISTER_CI_TOKEN` so it can
+  delete the environment).
+
 ## v1.5.1
 
 - *Sync Client Dropdowns*: skips quietly when the PR's branch is already gone (merged
