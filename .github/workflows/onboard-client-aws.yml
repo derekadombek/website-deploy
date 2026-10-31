@@ -154,7 +154,12 @@ jobs:
             echo "- The client hasn't created the stack from their link yet, or it failed (CloudFormation in their console)."
             echo "- The link's expiry date has passed: send a new link (onboarding-link.sh) and have them delete the old stack first."
             echo "- account_id in clients/$CLIENT.yaml doesn't match the account they created it in."
-            echo "- The Client name in the stack isn't \`$CLIENT\`."
+            echo "- The Client name in the stack isn't \`$CLIENT\` (the stack's own name doesn't matter)."
+            echo
+            echo "**Fix (any of these):** check the stack in their CloudFormation console. If it's missing,"
+            echo "failed or has the wrong Client name, have them delete it (and any role ending in"
+            echo "\`-onboarding\` in IAM), then open the link again; the same link works until it expires."
+            echo "If it has expired, make a new one: \`onboarding-link.sh --client $CLIENT\`. Then run this again."
           } | tee -a "$GITHUB_STEP_SUMMARY"
           exit 1
 
@@ -210,8 +215,9 @@ jobs:
 
           for _ in $(seq 1 60); do
             sleep 10
+            # GitHub runs this with bash -e: keep a failed call's message instead of stopping.
             out="$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" \
-              --query 'Stacks[0].StackStatus' --output text 2>&1)"
+              --query 'Stacks[0].StackStatus' --output text 2>&1)" || true
             case "$out" in
               DELETE_COMPLETE | *"does not exist"*)
                 echo "Stack deleted (the onboarding role is kept for the next step)"
@@ -222,6 +228,12 @@ jobs:
                   --query "StackEvents[?ResourceStatus=='DELETE_FAILED'].[LogicalResourceId,ResourceStatusReason]" --output text || true
                 echo "::error::Deleting $stack failed (reasons above). Ask the client to open CloudFormation ($REGION), select $stack and delete it again."
                 echo "### Access granted, but deleting the onboarding stack failed: see the log" >> "$GITHUB_STEP_SUMMARY"
+                exit 1 ;;
+              # Only a stack from the older template (no Retain) deletes the role mid-run.
+              *InvalidClientTokenId* | *"security token"* | *AccessDenied* | *"not authorized"* | *ExpiredToken*)
+                echo "AWS said: $out"
+                echo "::error::Lost access while deleting $stack: it's from an older template that deletes its own role. Delete $stack ($REGION) and the role $CLIENT-onboarding by hand."
+                echo "### Access granted, but $stack is from an older template: delete it and $CLIENT-onboarding by hand" >> "$GITHUB_STEP_SUMMARY"
                 exit 1 ;;
               *) echo "  $out" ;;
             esac
