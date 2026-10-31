@@ -11,6 +11,19 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
+## v1.7.0
+
+- *Offboard Client's AWS Account*: also opens the PR that removes `clients/<name>.yaml`,
+  with the client dropdowns already updated, so it's ready to merge. Uses
+  `REGISTER_CI_TOKEN` (already has Contents and Workflows write since v1.5.0).
+- New `already_disconnected` input: when the client already removed the roles (the
+  Disconnect link, or by hand), skips the AWS steps and only removes the environment
+  and client file. A failed sign-in without it says so. The owner/confirm guard moved
+  to the first job.
+
+**Upgrade notes:**
+- Clients repo `offboard.yml`: add an `already_disconnected` boolean input and pass it.
+
 ## v1.6.1
 
 - *Offboard Client's AWS Account*: deletes the GitHub Environment in a separate job.
