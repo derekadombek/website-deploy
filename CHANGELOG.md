@@ -11,12 +11,25 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
-- One-click Connect AWS, first part: the CloudFormation template a client creates from
+## v1.4.0
+
+- One-click Connect AWS: the CloudFormation template a client creates from
   a link (`infra/onboarding/connect-aws.yaml`: a temporary, expiring
   `<client>-onboarding` role for the clients repo, plus the GitHub OIDC provider if
   missing), `publish-onboarding-template.sh` (puts a release's template in a public
-  S3 bucket) and `onboarding-link.sh` (prints a client's link). Not usable until the
-  Onboard client workflow exists; *Grant AWS access* is unchanged.
+  S3 bucket) and `onboarding-link.sh` (prints a client's link).
+- *Onboard Client's AWS Account* (`onboard-client-aws.yml`, reusable): signs in through
+  the onboarding role, runs `grant-access.sh` with everything taken from the client file
+  (app repo and its ids, state bucket, lock table, delegation zone), deletes the
+  onboarding stack, then removes the onboarding role with the client's Terraform role
+  (a role can't delete itself, so the stack keeps it). *Grant AWS access* is unchanged and stays as the fallback.
+
+**Upgrade notes:**
+- Clients repo: add `onboard.yml` (calls this workflow; its `client` dropdown must list
+  the same clients as the others). For private app repos, add the `APP_REPO_READ_TOKEN`
+  secret (fine-grained PAT, All repositories or the app repos, Metadata: Read-only;
+  add Metadata by hand on the token page or the repository access won't save).
+- Publish this version's template: `publish-onboarding-template.sh v1.4.0`.
 
 ## v1.3.0
 

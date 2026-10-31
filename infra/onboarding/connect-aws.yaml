@@ -12,13 +12,19 @@ AWSTemplateFormatVersion: "2010-09-09"
 # stack is deleted, so the access Terraform (which reuses an existing provider)
 # keeps working.
 #
-# Delete order matters: the stack is deleted with the onboarding role's own
-# credentials, so that role must go LAST. Every helper resource depends on it
-# (DependsOn), which makes CloudFormation delete them first.
+# A role can't delete itself (its credentials stop working as its permissions
+# come off), and Onboard client deletes this stack with the onboarding role's own
+# credentials. So deleting the stack KEEPS the role (DeletionPolicy: Retain), and
+# Onboard client then removes it with the client's <client>-terraform role, which
+# may delete <client>-* roles and their inline policies. Its admin rights are an
+# inline policy for that reason (that role can't detach managed policies).
+# If the stack is deleted any other way, delete the <client>-onboarding role in
+# IAM too; until then the expiry date keeps it unusable.
 Description: >-
   Lets Derek Dombek's setup connect to this AWS account once, to create the roles
   that manage your website. Temporary: removed automatically when setup finishes,
-  and unusable after the expiry date.
+  and unusable after the expiry date. If you delete this stack yourself, also
+  delete the role it made (IAM, Roles, ending in -onboarding).
 
 Metadata:
   AWS::CloudFormation::Interface:
@@ -44,16 +50,24 @@ Parameters:
 Resources:
   # Trusts the management repo (classic subject and GitHub's immutable
   # owner@id/name@id one, as the Terraform role does), environment-scoped, and only
-  # before ExpiresAt. The provider ARN is predictable, so the trust doesn't
-  # reference the custom resource (which would make this role go first on delete).
+  # before ExpiresAt. The provider ARN is predictable, so the trust doesn't need
+  # to reference the custom resource (IAM accepts it before the provider exists).
   OnboardingRole:
     Type: AWS::IAM::Role
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       RoleName: !Sub "${ClientName}-onboarding"
       Description: !Sub "Temporary: lets derekadombek/website-deploy-clients set up access for ${ClientName}. Expires ${ExpiresAt}; removed when setup finishes."
       MaxSessionDuration: 3600
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AdministratorAccess
+      Policies:
+        - PolicyName: admin
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: "*"
+                Resource: "*"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -74,14 +88,12 @@ Resources:
 
   GitHubOidcLogs:
     Type: AWS::Logs::LogGroup
-    DependsOn: OnboardingRole
     Properties:
       LogGroupName: !Sub "/aws/lambda/${ClientName}-onboarding-oidc"
       RetentionInDays: 1
 
   GitHubOidcFunctionRole:
     Type: AWS::IAM::Role
-    DependsOn: OnboardingRole
     Properties:
       AssumeRolePolicyDocument:
         Version: "2012-10-17"

@@ -1,0 +1,273 @@
+name: Onboard Client's AWS Account
+
+# One-click Connect AWS, the second half. The client has created the onboarding
+# stack from their link (infra/scripts/onboarding-link.sh), which left a temporary
+# <name>-onboarding admin role that only this repo's <name> environment can use.
+# This signs in through it, runs grant-access.sh (state bucket + the usual roles,
+# the same Terraform as the aws-grant-access action), deletes the stack and then
+# removes the onboarding role. Re-granting after a role change is the same: a new
+# link, then this.
+#
+# Needs clients/<name>.yaml (account_id from the client) and its GitHub
+# Environment (Set CI Environment makes it when the file merges). Everything
+# grant-access needs comes from the client file:
+#   - deploy role: app_repo (none when site: false). Its numeric ids are looked
+#     up for GitHub's immutable subject; a private app repo needs the
+#     APP_REPO_READ_TOKEN secret for that.
+#   - lock table: only for state_lock dynamodb / both.
+#   - delegation role: when another client has delegate_from: <name>.
+#
+# A role can't delete itself, so deleting the stack keeps the onboarding role
+# (DeletionPolicy: Retain) and the client's <client>-terraform role, just made by
+# grant-access, removes it (it may delete <client>-* roles and inline policies).
+on:
+  workflow_call:
+    inputs:
+      package_ref:
+        description: website-deploy ref to run (the same tag/sha as in your `uses:` line).
+        type: string
+        required: true
+      client:
+        description: Client to onboard (clients/<name>.yaml).
+        type: string
+        required: true
+    secrets:
+      APP_REPO_READ_TOKEN:
+        description: Fine-grained PAT with read access to the app repos (Metadata is enough). Only for private app repos.
+        required: false
+
+permissions:
+  id-token: write # OIDC token to assume the onboarding role
+  contents: read
+
+# Called from the private clients repo (workflow_call) — it isn't run here. Its
+# clients/ is checked out at the workspace root, this package at package_ref
+# into pkg/.
+env:
+  CLIENTS_DIR: ${{ github.workspace }}/clients
+  TERRAFORM_VERSION: "1.16.5" # keep in sync with .terraform-version
+  CLIENT: ${{ inputs.client }}
+
+defaults:
+  run:
+    working-directory: pkg
+
+# Shared with Provision / Teardown / Unlock: one Terraform run at a time.
+concurrency:
+  group: terraform
+  cancel-in-progress: false
+
+jobs:
+  onboard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.client }}
+    steps:
+      - name: Restrict to owner
+        working-directory: . # before checkout: pkg/ isn't there yet
+        if: github.actor != 'derekadombek'
+        run: |
+          echo "Only the repo owner may run this workflow (actor: ${{ github.actor }})." >&2
+          exit 1
+      - uses: actions/checkout@v4 # the calling repo: clients/
+        with:
+          sparse-checkout: clients
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref
+        with:
+          repository: derekadombek/website-deploy
+          ref: ${{ inputs.package_ref }}
+          path: pkg
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+
+      - name: Read client file
+        id: client
+        env:
+          GH_TOKEN: ${{ secrets.APP_REPO_READ_TOKEN || github.token }}
+          TOKEN_NAME: ${{ secrets.APP_REPO_READ_TOKEN != '' && 'APP_REPO_READ_TOKEN' || 'the default GITHUB_TOKEN (no APP_REPO_READ_TOKEN passed)' }}
+        run: |
+          set -euo pipefail
+          source infra/scripts/lib/client.sh
+          client_check "$CLIENT"
+          [ "$(client_get "$CLIENT" provider)" = "aws" ] || { echo "::error::$CLIENT isn't an AWS client"; exit 1; }
+          account="$(client_get "$CLIENT" account_id)"
+          region="$(client_get "$CLIENT" region)"
+
+          app_repo="" app_ids=""
+          if [ "$(client_get "$CLIENT" site true)" != "false" ]; then
+            app_repo="$(client_get "$CLIENT" app_repo)"
+            [ -n "$app_repo" ] || { echo "::error::clients/$CLIENT.yaml has a site but no app_repo"; exit 1; }
+            # Without the ids the deploy role would lose the immutable subject
+            # newer repos sign in with, so don't carry on without them.
+            echo "Looking up $app_repo with $TOKEN_NAME"
+            app_ids="$(gh api "repos/$app_repo" --jq '"\(.owner.id)/\(.id)"' 2>lookup.err)" || {
+              echo "GitHub said: $(cat lookup.err)"
+              echo "::error::Can't read $app_repo to look up its ids. For a private repo, the APP_REPO_READ_TOKEN secret must be a fine-grained PAT whose repository access includes $app_repo (404 = not included or wrong owner, 401 = bad or expired token)."
+              exit 1
+            }
+          fi
+
+          lock_table=""
+          case "$(client_get "$CLIENT" state_lock dynamodb)" in
+            dynamodb | both) lock_table="$(client_get "$CLIENT" lock_table "$CLIENT-tf-locks")" ;;
+          esac
+
+          delegation_zone=""
+          for c in $(client_list aws); do
+            if [ "$(client_get "$c" delegate_from)" = "$CLIENT" ]; then delegation_zone="$(client_zone "$CLIENT")"; fi
+          done
+
+          {
+            echo "role=arn:aws:iam::$account:role/$CLIENT-onboarding"
+            echo "account=$account"
+            echo "region=$region"
+            echo "app_repo=$app_repo"
+            echo "app_ids=$app_ids"
+            echo "state_bucket=$(client_get "$CLIENT" state_bucket "$CLIENT-tf-state")"
+            echo "lock_table=$lock_table"
+            echo "delegation_zone=$delegation_zone"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "### Onboarding $CLIENT (account $account, $region)"
+            echo "- deploy role: ${app_repo:-none (no site)}"
+            echo "- lock table: ${lock_table:-none (S3 lockfile)}"
+            echo "- delegation role: ${delegation_zone:-none}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Sign in through the onboarding role
+        id: signin
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ steps.client.outputs.role }}
+          aws-region: ${{ steps.client.outputs.region }}
+      - name: Explain a failed sign-in
+        if: steps.signin.outcome == 'failure'
+        env:
+          ACCOUNT: ${{ steps.client.outputs.account }}
+        run: |
+          {
+            echo "### Couldn't sign in to $CLIENT's account ($ACCOUNT)"
+            echo "One of these:"
+            echo "- The client hasn't created the stack from their link yet, or it failed (CloudFormation in their console)."
+            echo "- The link's expiry date has passed: send a new link (onboarding-link.sh) and have them delete the old stack first."
+            echo "- account_id in clients/$CLIENT.yaml doesn't match the account they created it in."
+            echo "- The Client name in the stack isn't \`$CLIENT\` (the stack's own name doesn't matter)."
+            echo
+            echo "**Fix (any of these):** check the stack in their CloudFormation console. If it's missing,"
+            echo "failed or has the wrong Client name, have them delete it (and any role ending in"
+            echo "\`-onboarding\` in IAM), then open the link again; the same link works until it expires."
+            echo "If it has expired, make a new one: \`onboarding-link.sh --client $CLIENT\`. Then run this again."
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          exit 1
+
+      - name: Grant access
+        env:
+          REGION: ${{ steps.client.outputs.region }}
+          APP_REPO: ${{ steps.client.outputs.app_repo }}
+          APP_IDS: ${{ steps.client.outputs.app_ids }}
+          STATE_BUCKET: ${{ steps.client.outputs.state_bucket }}
+          LOCK_TABLE: ${{ steps.client.outputs.lock_table }}
+          DELEGATION_ZONE: ${{ steps.client.outputs.delegation_zone }}
+        run: |
+          infra/scripts/grant-access.sh \
+            --project "$CLIENT" \
+            --region "$REGION" \
+            --deploy-repo "$APP_REPO" \
+            --mgmt-environment "$CLIENT" \
+            --state-bucket "$STATE_BUCKET" \
+            --lock-table "$LOCK_TABLE" \
+            ${APP_IDS:+--deploy-repo-ids "$APP_IDS"} \
+            ${DELEGATION_ZONE:+--delegation-zone "$DELEGATION_ZONE"}
+
+      # Ask CloudFormation which stack owns the role, so a stack the client named
+      # differently is still found (it doesn't tag IAM roles with the stack name).
+      # The link puts it in the client file's region; look there first, then in
+      # every other region, in case it was created by hand somewhere else.
+      - name: Delete the onboarding stack
+        env:
+          REGION: ${{ steps.client.outputs.region }}
+        run: |
+          set -uo pipefail
+          stack="" last_err=""
+          others="$(aws ec2 describe-regions --region "$REGION" --query 'Regions[].RegionName' --output text 2>&1)" \
+            || { echo "Can't list regions ($others); looking in $REGION only"; others=""; }
+          for r in "$REGION" $(tr -s '\t ' '\n' <<<"$others" | grep -vx "$REGION"); do
+            if out="$(aws cloudformation describe-stack-resources --region "$r" \
+              --physical-resource-id "$CLIENT-onboarding" \
+              --query 'StackResources[0].StackName' --output text 2>&1)" \
+              && [ -n "$out" ] && [ "$out" != "None" ]; then
+              stack="$out"; REGION="$r"; break
+            fi
+            [ -n "$last_err" ] || last_err="$out"
+          done
+          if [ -z "$stack" ]; then
+            echo "AWS said (in the client's region): $last_err"
+            echo "::error::No CloudFormation stack in any region owns $CLIENT-onboarding. Ask the client to delete the onboarding stack in CloudFormation (or delete the role in IAM if there's no stack)."
+            echo "### Access granted, but the onboarding stack wasn't found: delete it by hand" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "Found stack $stack in $REGION"
+          aws cloudformation delete-stack --stack-name "$stack" --region "$REGION" || exit 1
+          echo "Deleting stack $stack"
+
+          for _ in $(seq 1 60); do
+            sleep 10
+            # GitHub runs this with bash -e: keep a failed call's message instead of stopping.
+            out="$(aws cloudformation describe-stacks --stack-name "$stack" --region "$REGION" \
+              --query 'Stacks[0].StackStatus' --output text 2>&1)" || true
+            case "$out" in
+              DELETE_COMPLETE | *"does not exist"*)
+                echo "Stack deleted (the onboarding role is kept for the next step)"
+                exit 0 ;;
+              DELETE_FAILED)
+                echo "Why:"
+                aws cloudformation describe-stack-events --stack-name "$stack" --region "$REGION" \
+                  --query "StackEvents[?ResourceStatus=='DELETE_FAILED'].[LogicalResourceId,ResourceStatusReason]" --output text || true
+                echo "::error::Deleting $stack failed (reasons above). Ask the client to open CloudFormation ($REGION), select $stack and delete it again."
+                echo "### Access granted, but deleting the onboarding stack failed: see the log" >> "$GITHUB_STEP_SUMMARY"
+                exit 1 ;;
+              # Only a stack from the older template (no Retain) deletes the role mid-run.
+              *InvalidClientTokenId* | *"security token"* | *AccessDenied* | *"not authorized"* | *ExpiredToken*)
+                echo "AWS said: $out"
+                echo "::error::Lost access while deleting $stack: it's from an older template that deletes its own role. Delete $stack ($REGION) and the role $CLIENT-onboarding by hand."
+                echo "### Access granted, but $stack is from an older template: delete it and $CLIENT-onboarding by hand" >> "$GITHUB_STEP_SUMMARY"
+                exit 1 ;;
+              *) echo "  $out" ;;
+            esac
+          done
+          echo "::error::$stack still deleting after 10 minutes; check it in the client's CloudFormation console ($REGION)"
+          exit 1
+
+      # A role can't delete itself, so the stack keeps it (DeletionPolicy: Retain)
+      # and the client's Terraform role, which may manage <client>-* roles, removes it.
+      - name: Switch to the client's Terraform role
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ steps.client.outputs.account }}:role/${{ inputs.client }}-terraform
+          aws-region: ${{ steps.client.outputs.region }}
+      - name: Remove the onboarding role
+        run: |
+          set -euo pipefail
+          role="$CLIENT-onboarding"
+          if ! aws iam get-role --role-name "$role" >/dev/null 2>&1; then
+            echo "$role is already gone"
+          else
+            attached="$(aws iam list-attached-role-policies --role-name "$role" --query 'AttachedPolicies[].PolicyArn' --output text)"
+            if [ -n "$attached" ] && [ "$attached" != "None" ]; then
+              echo "::error::$role has attached policies ($attached), so it's from an older template; the Terraform role can't detach them. Delete $role by hand in IAM."
+              echo "### Access granted; delete $role by hand in IAM (older template)" >> "$GITHUB_STEP_SUMMARY"
+              exit 1
+            fi
+            for p in $(aws iam list-role-policies --role-name "$role" --query 'PolicyNames[]' --output text); do
+              aws iam delete-role-policy --role-name "$role" --policy-name "$p"
+            done
+            aws iam delete-role --role-name "$role"
+            echo "Removed $role"
+          fi
+          {
+            echo "### Access granted; onboarding stack and role removed"
+            echo "Next: Provision (the client file is already in place)."
+          } >> "$GITHUB_STEP_SUMMARY"
