@@ -1,0 +1,75 @@
+name: Sync Client Dropdowns
+
+# On a PR in the clients repo that adds or removes a client file (or changes its
+# `ci:`), rewrites the `client` dropdowns in that repo's workflows to match
+# clients/ and pushes the change to the PR's branch, so the PR carries both. You
+# review and merge as usual. Only the `- name` lines under `options:` change.
+#
+# AUTH: GITHUB_TOKEN may not push changes to workflow files, so this pushes with a
+# PAT, the SYNC_TOKEN secret: a fine-grained PAT for the clients repo with
+#   - Contents:  Read and write (push to the PR branch)
+#   - Workflows: Read and write (the files it changes are workflows)
+# The clients repo passes its REGISTER_CI_TOKEN with those two added.
+# Its push starts this again; that run finds nothing to change and stops.
+on:
+  workflow_call:
+    inputs:
+      package_ref:
+        description: website-deploy ref to run (the same tag/sha as in your `uses:` line).
+        type: string
+        required: true
+    secrets:
+      SYNC_TOKEN:
+        required: true
+
+permissions:
+  contents: read
+
+env:
+  CLIENTS_DIR: ${{ github.workspace }}/clients
+
+concurrency:
+  group: sync-client-dropdowns-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    # Branches of this repo only: never push to a fork's branch.
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4 # the calling repo, on the PR's branch
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.SYNC_TOKEN }}
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref
+        with:
+          repository: derekadombek/website-deploy
+          ref: ${{ inputs.package_ref }}
+          path: pkg
+      - name: Sync the dropdowns
+        id: sync
+        run: |
+          set -euo pipefail
+          source pkg/infra/scripts/lib/client.sh
+          changed="$(client_dropdowns_sync .github/workflows)"
+          client_dropdowns_check .github/workflows
+          if [ -z "$changed" ]; then
+            echo "Dropdowns already match clients/" | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "### Updated the client dropdowns to: $(client_dropdown_names | xargs)"
+            while read -r f; do echo "- \`$f\`"; done <<<"$changed"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+      - name: Push to the PR branch
+        if: steps.sync.outputs.changed == 'true'
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows
+          git commit -m "Sync client dropdowns with clients/"
+          git push origin "HEAD:$HEAD_REF"
