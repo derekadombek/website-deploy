@@ -11,6 +11,18 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
+## v1.8.0
+
+- New *Client Onboarding AWS Link* workflow: makes a client's One-click Connect AWS link
+  in the clients repo and prints it in the log and run summary, so no local checkout is needed. Region
+  defaults to the client file's (when there is one yet).
+- `onboarding-link.sh`: without `--version`, picks the newest tag (up to the checkout)
+  whose template is published, instead of the newest tag, which often had none.
+
+**Upgrade notes:**
+- To use the workflow, add `.github/workflows/onboarding-link.yml` to the clients repo
+  (the caller is in `infra/README.md`, *One-click Connect AWS*).
+
 ## v1.7.2
 
 - *Provision*: a failed hosted-zone step now stops the run with an error. Before, its

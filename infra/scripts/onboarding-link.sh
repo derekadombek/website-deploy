@@ -16,7 +16,8 @@
 #              (the client file can come later, once you have their account id)
 #   --region   where the stack goes; use the client file's region (default us-west-2)
 #   --days     how long the link works (default 7)
-#   --version  published template version (default: newest vX.Y.Z tag here)
+#   --version  published template version (default: the newest vX.Y.Z tag up to
+#              this checkout whose template is published)
 
 set -euo pipefail
 
@@ -38,16 +39,25 @@ done
   || { echo "--client: lowercase letters, numbers and dashes only" >&2; exit 1; }
 [[ "${DAYS}" =~ ^[1-9][0-9]?$ ]] || { echo "--days: 1 to 99" >&2; exit 1; }
 
+template_url() { echo "https://${TEMPLATE_BUCKET}.s3.amazonaws.com/connect-aws/$1.yaml"; }
+
+# Not every release publishes the template (it rarely changes), so take the
+# newest tag that has one. Only tags up to HEAD: never a template newer than
+# the Onboard workflow running alongside it.
 if [ -z "${VERSION}" ]; then
   SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  VERSION="$(git -C "${SCRIPT_DIR}" tag --list 'v*.*.*' --sort=-v:refname | head -1)"
-  [ -n "${VERSION}" ] || { echo "no vX.Y.Z tag found; pass --version" >&2; exit 1; }
+  tags="$(git -C "${SCRIPT_DIR}" tag --list 'v*.*.*' --merged HEAD --sort=-v:refname)"
+  [ -n "${tags}" ] || { echo "no vX.Y.Z tag found; pass --version" >&2; exit 1; }
+  for t in ${tags}; do
+    if curl -fsI -o /dev/null "$(template_url "${t}")"; then VERSION="${t}"; break; fi
+  done
+  [ -n "${VERSION}" ] || { echo "no published template for any tag up to $(echo "${tags}" | head -1); publish one: infra/scripts/publish-onboarding-template.sh <version>" >&2; exit 1; }
 fi
 
 # Midnight UTC, DAYS days from today (BSD date on macOS, GNU date on Linux).
 EXPIRES="$(date -u -v+"${DAYS}"d +%Y-%m-%dT00:00:00Z 2>/dev/null || date -u -d "+${DAYS} days" +%Y-%m-%dT00:00:00Z)"
 
-TEMPLATE_URL="https://${TEMPLATE_BUCKET}.s3.amazonaws.com/connect-aws/${VERSION}.yaml"
+TEMPLATE_URL="$(template_url "${VERSION}")"
 
 # Fail now rather than hand the client a link that errors.
 if ! curl -fsI -o /dev/null "${TEMPLATE_URL}"; then

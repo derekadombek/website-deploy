@@ -113,12 +113,42 @@ use, until an expiry date, plus the GitHub OIDC provider if the account has none
 (kept on stack delete). Then: add the client file with their account id (step 2),
 and run **Onboard Client's AWS Account** in the clients repo. It signs in through the
 onboarding role, runs `grant-access.sh` with everything from the client file, and
-deletes the stack. Then Provision (step 3). Publish the template once per release,
-then print a client's link:
+deletes the stack. Then Provision (step 3). Publish the template when it changes
+(a link uses the newest published one), then make a client's link: run **Client
+Onboarding AWS Link** in the clients repo (the link is in the log and run summary), or locally:
 
 ```bash
 AWS_PROFILE=derek infra/scripts/publish-onboarding-template.sh v1.4.0
 infra/scripts/onboarding-link.sh --client acme --region us-west-2
+```
+
+The clients repo's caller (`.github/workflows/onboarding-link.yml`). `client` is free
+text, not a dropdown: a new client has no file yet.
+
+```yaml
+name: Client Onboarding AWS Link
+on:
+  workflow_dispatch:
+    inputs:
+      client:
+        description: Client name (lowercase, dashes; their client file can come later)
+        required: true
+      region:
+        description: Blank = the client file's region, or us-west-2
+        default: ""
+      days:
+        description: How many days the link works
+        default: "7"
+permissions:
+  contents: read
+jobs:
+  link:
+    uses: derekadombek/website-deploy/.github/workflows/onboarding-link.yml@vX.Y.Z
+    with:
+      package_ref: vX.Y.Z
+      client: ${{ inputs.client }}
+      region: ${{ inputs.region }}
+      days: ${{ inputs.days }}
 ```
 
 **Adding a domain later** — edit the client file (`domain`, `dns`), merge, and
