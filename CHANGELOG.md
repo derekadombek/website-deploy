@@ -11,6 +11,17 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
+- *Sync Client Dropdowns* (`sync-client-dropdowns.yml`, reusable): on a clients-repo PR
+  that changes `clients/`, rewrites every workflow's `client` dropdown to match the
+  client files (keeping "all" where there is one) and pushes that to the PR's branch.
+  New `client_dropdowns_sync` / `client_dropdown_names` in `lib/client.sh`; the
+  existing check is unchanged.
+
+**Upgrade notes:**
+- Clients repo: add `sync-dropdowns.yml` (calls this on `pull_request` for `clients/**`).
+  Give `REGISTER_CI_TOKEN` two more permissions on the clients repo: Contents and
+  Workflows, both Read and write (GitHub's own token can't push workflow changes).
+
 ## v1.4.0
 
 - One-click Connect AWS: the CloudFormation template a client creates from

@@ -188,13 +188,20 @@ client_stale_delegation() {
 }
 client_plan_role_arn() { echo "arn:aws:iam::$(client_get "$1" account_id):role/$1-plan"; }
 
+# client_dropdown_names — what every `client` dropdown lists: the CI-managed AWS
+# clients (ci isn't false), sorted.
+client_dropdown_names() {
+  local c
+  for c in $(client_list aws); do [ "$(client_get "${c}" ci true)" = "false" ] || echo "${c}"; done | sort
+}
+
 # client_dropdowns_check <workflows dir> — every workflow there with a `client`
 # dropdown (workflow_dispatch input of type choice) must list exactly the
 # CI-managed AWS clients (ci isn't false), plus optionally "all". Add a client's
 # name to the dropdowns in the same PR as its file. Needs yq (on GitHub runners).
 client_dropdowns_check() {
   local dir="$1" f want have errs=""
-  want="$(for c in $(client_list aws); do [ "$(client_get "${c}" ci true)" = "false" ] || echo "${c}"; done | sort)"
+  want="$(client_dropdown_names)"
   for f in "${dir}"/*.yml "${dir}"/*.yaml; do
     [ -f "${f}" ] || continue
     [ "$(yq '.on.workflow_dispatch.inputs.client.type // ""' "${f}")" = "choice" ] || continue
@@ -203,4 +210,39 @@ client_dropdowns_check() {
       errs+="  $(basename "${f}"): missing [$(comm -23 <(echo "${want}") <(echo "${have}") | xargs)] extra [$(comm -13 <(echo "${want}") <(echo "${have}") | xargs)]\n"
   done
   [ -z "${errs}" ] || { printf "client dropdowns don't match the CI-managed clients in clients/:\n${errs}" >&2; return 1; }
+}
+
+# client_dropdowns_sync <workflows dir> — rewrite every `client` dropdown to list
+# exactly client_dropdown_names (keeping a leading "all" where a dropdown has one).
+# Only the `- name` lines under that input's `options:` change; the rest of each
+# file is left byte for byte. Prints the files it changed. Needs yq (to find them).
+client_dropdowns_sync() {
+  local dir="$1" f names tmp
+  names="$(client_dropdown_names)"
+  for f in "${dir}"/*.yml "${dir}"/*.yaml; do
+    [ -f "${f}" ] || continue
+    [ "$(yq '.on.workflow_dispatch.inputs.client.type // ""' "${f}")" = "choice" ] || continue
+    local all="" opts
+    # Read first: piping into grep -q fails under pipefail when grep stops early.
+    opts="$(yq '.on.workflow_dispatch.inputs.client.options[]' "${f}")"
+    if grep -qx all <<<"${opts}"; then all="all"; fi
+    tmp="$(mktemp)"
+    # In the `client:` input's block: replace the list after `options:`.
+    NAMES="$({ [ -z "${all}" ] || echo all; echo "${names}"; })" awk '
+      function indent(s) { match(s, /^ */); return RLENGTH }
+      in_opts && /^ *- / && indent($0) > opts_indent { next }
+      in_opts { in_opts = 0; in_client = 0 }
+      /^ +client:[[:space:]]*$/ && !done { in_client = 1; client_indent = indent($0); print; next }
+      in_client && indent($0) <= client_indent && $0 !~ /^[[:space:]]*$/ { in_client = 0 }
+      in_client && /^ +options:[[:space:]]*$/ {
+        print; opts_indent = indent($0); in_opts = 1; done = 1
+        n = split(ENVIRON["NAMES"], list, "\n")
+        pad = ""; for (i = 0; i < opts_indent + 2; i++) pad = pad " "
+        for (i = 1; i <= n; i++) if (list[i] != "") print pad "- " list[i]
+        next
+      }
+      { print }
+    ' "${f}" > "${tmp}"
+    if cmp -s "${tmp}" "${f}"; then rm -f "${tmp}"; else cat "${tmp}" > "${f}"; rm -f "${tmp}"; echo "${f}"; fi
+  done
 }
