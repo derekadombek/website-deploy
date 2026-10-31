@@ -12,7 +12,8 @@ name: Offboard Client's AWS Account
 #      (inline) policy removed. A role can't delete itself, so this is the end
 #      state: an empty role, tagged `offboarded`, that the client can delete.
 #   4. deletes the client's GitHub Environment (needs REGISTER_CI_TOKEN; without
-#      it, delete it by hand).
+#      it, delete it by hand). In its own job: GitHub recreates an environment
+#      that a running job uses when that job ends.
 #
 # Kept on purpose: the site, the state bucket (+ lock table), the GitHub OIDC
 # provider (it grants nothing alone; the client may use it) and Onsyte's roles.
@@ -208,18 +209,6 @@ jobs:
           echo "::error::$role can still read IAM a minute after its policy was removed. Check it in the client's IAM console."
           exit 1
 
-      - name: Delete the GitHub Environment
-        env:
-          GH_TOKEN: ${{ secrets.REGISTER_CI_TOKEN }}
-        run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::warning::No REGISTER_CI_TOKEN passed: delete the $CLIENT environment by hand (Settings → Environments)."
-            echo "ENV_RESULT=left, delete it by hand" >> "$GITHUB_ENV"
-            exit 0
-          fi
-          gh api -X DELETE "repos/$GITHUB_REPOSITORY/environments/$CLIENT"
-          echo "ENV_RESULT=deleted" >> "$GITHUB_ENV"
-
       - name: Summary
         env:
           ACCOUNT: ${{ steps.client.outputs.account }}
@@ -229,7 +218,6 @@ jobs:
             echo "### $CLIENT offboarded (account $ACCOUNT)"
             cat removed.md
             echo "- $CLIENT-terraform: locked and emptied (no trust, no permissions)"
-            echo "- GitHub Environment $CLIENT: $ENV_RESULT"
             echo "- Kept: the site, s3://$STATE_BUCKET (note: OFFBOARDED.md), the OIDC provider"
             echo
             echo "**Next:** remove clients/$CLIENT.yaml in a PR (wait for the dropdown commit, then merge)."
@@ -243,3 +231,22 @@ jobs:
             echo "> manage the site; keep it. If GitHub access was set up for your app repo,"
             echo "> remove me as a collaborator there."
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # Not in the offboard job: that job runs in the environment, and GitHub
+  # recreates it when the job ends.
+  remove-environment:
+    needs: offboard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete the GitHub Environment
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ secrets.REGISTER_CI_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::No REGISTER_CI_TOKEN passed: delete the $CLIENT environment by hand (Settings → Environments)."
+            echo "- GitHub Environment $CLIENT: **left**, delete it by hand" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          gh api -X DELETE "repos/$GITHUB_REPOSITORY/environments/$CLIENT"
+          echo "- GitHub Environment $CLIENT: deleted" >> "$GITHUB_STEP_SUMMARY"

@@ -11,6 +11,11 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
+## v1.6.1
+
+- *Offboard Client's AWS Account*: deletes the GitHub Environment in a separate job.
+  Deleted from the job that ran in it, GitHub recreated it (empty) when that job ended.
+
 ## v1.6.0
 
 - *Offboard Client's AWS Account* (`offboard-client-aws.yml`, reusable): removes your
