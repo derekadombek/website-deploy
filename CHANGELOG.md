@@ -11,6 +11,12 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
+## v1.7.2
+
+- *Provision*: a failed hosted-zone step now stops the run with an error. Before, its
+  output and failure were hidden, the NS delegation was skipped, and the apply hung on
+  certificate validation. Terraform's output for that step now shows in the log.
+
 ## v1.7.1
 
 - *Offboard Client's AWS Account*: its last job can be re-run. It skips an environment
