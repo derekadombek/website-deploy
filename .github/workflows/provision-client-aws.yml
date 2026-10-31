@@ -331,6 +331,7 @@ jobs:
       - name: Create DNS zone (if this client gets one)
         id: zone
         run: |
+          set -o pipefail # else tee's success hides a failed script
           infra/scripts/onboard-site.sh --phase create-zone "$CLIENT" | tee -a "$GITHUB_STEP_SUMMARY"
           ns=$(infra/scripts/tf.sh "$CLIENT" output -json hosted_zone_name_servers | jq -r '.[]' | tr '\n' ' ')
           echo "ns=$ns" >> "$GITHUB_OUTPUT"

@@ -110,7 +110,14 @@ create_zone() {
   # No-op when create_hosted_zone = false (the resource has zero instances).
   local targets=(-target='module.site[0].aws_route53_zone.primary' -target='module.site[0].aws_route53domains_registered_domain.this')
   [ "$(client_get "${ENV_NAME}" site true)" = "false" ] && targets=(-target='aws_route53_zone.app')
-  terraform apply -input=false -auto-approve "${targets[@]}" >/dev/null 2>&1 || true
+  # Output to stderr: the logs, not Provision's run summary (it tees stdout there).
+  # Stop on failure: carrying on finds no zone, skips the delegation, and the full
+  # apply then waits forever on certificate validation.
+  terraform apply -input=false -auto-approve "${targets[@]}" >&2 || {
+    echo "Creating the hosted zone failed (see above). Not continuing: without the zone the" >&2
+    echo "NS delegation is skipped and the certificate would wait forever for DNS." >&2
+    exit 1
+  }
 }
 
 # The zone's name, from the client file (as infra/sites/aws computes it) — not
