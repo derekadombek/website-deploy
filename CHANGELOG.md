@@ -11,6 +11,13 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
+## v1.5.1
+
+- *Sync Client Dropdowns*: skips quietly when the PR's branch is already gone (merged
+  and deleted before it started) instead of failing at checkout.
+
+## v1.5.0
+
 - *Sync Client Dropdowns* (`sync-client-dropdowns.yml`, reusable): on a clients-repo PR
   that changes `clients/`, rewrites every workflow's `client` dropdown to match the
   client files (keeping "all" where there is one) and pushes that to the PR's branch.

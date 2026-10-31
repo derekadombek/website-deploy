@@ -38,17 +38,33 @@ jobs:
     # Branches of this repo only: never push to a fork's branch.
     if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     steps:
+      # A PR merged with --delete-branch right away can lose its branch before
+      # this starts; then there's nothing to push to, so skip quietly.
+      - name: Check the PR branch still exists
+        id: branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if gh api "repos/$GITHUB_REPOSITORY/branches/$HEAD_REF" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Branch $HEAD_REF is gone (PR already merged?); nothing to sync" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
       - uses: actions/checkout@v4 # the calling repo, on the PR's branch
+        if: steps.branch.outputs.exists == 'true'
         with:
           ref: ${{ github.head_ref }}
           token: ${{ secrets.SYNC_TOKEN }}
       - uses: actions/checkout@v4 # the package, at the caller's pinned ref
+        if: steps.branch.outputs.exists == 'true'
         with:
           repository: derekadombek/website-deploy
           ref: ${{ inputs.package_ref }}
           path: pkg
       - name: Sync the dropdowns
         id: sync
+        if: steps.branch.outputs.exists == 'true'
         run: |
           set -euo pipefail
           source pkg/infra/scripts/lib/client.sh
