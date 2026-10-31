@@ -152,14 +152,14 @@ jobs:
             echo "### Couldn't sign in to $CLIENT's account ($ACCOUNT)"
             echo "One of these:"
             echo "- The client hasn't created the stack from their link yet, or it failed (CloudFormation in their console)."
-            echo "- The link's expiry date has passed: send a new link (onboarding-link.sh) and have them delete the old stack first."
+            echo "- The link's expiry date has passed: send a new link (Client Onboarding AWS Link workflow) and have them delete the old stack first."
             echo "- account_id in clients/$CLIENT.yaml doesn't match the account they created it in."
             echo "- The Client name in the stack isn't \`$CLIENT\` (the stack's own name doesn't matter)."
             echo
             echo "**Fix (any of these):** check the stack in their CloudFormation console. If it's missing,"
             echo "failed or has the wrong Client name, have them delete it (and any role ending in"
             echo "\`-onboarding\` in IAM), then open the link again; the same link works until it expires."
-            echo "If it has expired, make a new one: \`onboarding-link.sh --client $CLIENT\`. Then run this again."
+            echo "If it has expired, make a new one with the **Client Onboarding AWS Link** workflow. Then run this again."
           } | tee -a "$GITHUB_STEP_SUMMARY"
           exit 1
 

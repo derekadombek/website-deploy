@@ -1,0 +1,114 @@
+name: Client Onboarding AWS Link
+
+# One-click Connect AWS, the first half: makes a client's link
+# (infra/scripts/onboarding-link.sh) and prints it in the log and the run
+# summary, ready to send. From a terminal:
+#   gh run view <id> -R <clients repo> --log | grep -o 'https://[^ ]*quickcreate[^ ]*'
+# The client signs in to their AWS console, opens it, ticks the IAM box and
+# clicks Create stack, then sends back their account id. Next: their client file,
+# then Onboard Client's AWS Account.
+#
+# Needs no AWS access and no client file: a new client won't have one yet. When
+# clients/<name>.yaml exists, its region is the default.
+on:
+  workflow_call:
+    inputs:
+      package_ref:
+        description: website-deploy ref to run (the same tag/sha as in your `uses:` line).
+        type: string
+        required: true
+      client:
+        description: Client name (their clients/<name>.yaml and GitHub environment, now or later).
+        type: string
+        required: true
+      region:
+        description: Where the stack goes. Blank = the client file's region, or us-west-2 without one.
+        type: string
+        default: ""
+      days:
+        description: How many days the link works.
+        type: string
+        default: "7"
+      template_version:
+        description: Published template version. Blank = the newest published one up to package_ref.
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+# Called from the private clients repo (workflow_call) — it isn't run here. Its
+# clients/ is checked out at the workspace root, this package at package_ref
+# into pkg/.
+env:
+  CLIENTS_DIR: ${{ github.workspace }}/clients
+  CLIENT: ${{ inputs.client }}
+
+defaults:
+  run:
+    working-directory: pkg
+
+jobs:
+  link:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Restrict to owner
+        working-directory: . # before checkout: pkg/ isn't there yet
+        if: github.actor != 'derekadombek'
+        run: |
+          echo "Only the repo owner may run this workflow (actor: ${{ github.actor }})." >&2
+          exit 1
+      - uses: actions/checkout@v4 # the calling repo: clients/
+        with:
+          sparse-checkout: clients
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref
+        with:
+          repository: derekadombek/website-deploy
+          ref: ${{ inputs.package_ref }}
+          path: pkg
+          fetch-depth: 0 # tags, to find the newest published template
+
+      - name: Make the link
+        env:
+          REGION: ${{ inputs.region }}
+          DAYS: ${{ inputs.days }}
+          TEMPLATE_VERSION: ${{ inputs.template_version }}
+        run: |
+          set -euo pipefail
+          [[ "$CLIENT" =~ ^[a-z0-9][a-z0-9-]{0,40}[a-z0-9]$ ]] \
+            || { echo "::error::client: lowercase letters, numbers and dashes only"; exit 1; }
+          source infra/scripts/lib/client.sh
+          from="input"
+          if [ -z "$REGION" ] && [ -f "$CLIENTS_DIR/$CLIENT.yaml" ]; then
+            REGION="$(client_get "$CLIENT" region)"; from="clients/$CLIENT.yaml"
+          fi
+          [ -n "$REGION" ] || { REGION="us-west-2"; from="default"; }
+
+          out="$(infra/scripts/onboarding-link.sh --client "$CLIENT" --region "$REGION" --days "$DAYS" \
+            ${TEMPLATE_VERSION:+--version "$TEMPLATE_VERSION"})"
+          link="$(tail -1 <<<"$out")"
+          sed '$d' <<<"$out"
+          echo "Link:"
+          echo "$link"
+          version="$(sed -n 's/^Template: *//p' <<<"$out")"
+          expires="$(sed -n 's/^Expires: *//p' <<<"$out")"
+          {
+            echo "### Connect AWS link for $CLIENT"
+            echo "Region $REGION ($from) · template $version · works until $expires"
+            echo
+            echo '```'
+            echo "$link"
+            echo '```'
+            echo
+            echo "**Send it to the client:** sign in to the AWS account the site should live in, open"
+            echo "the link, tick *I acknowledge that AWS CloudFormation might create IAM resources*,"
+            echo "click **Create stack**, then send back the account id (top right of the console)."
+            echo
+            if [ -f "$CLIENTS_DIR/$CLIENT.yaml" ]; then
+              echo "**Then:** check the account id matches \`clients/$CLIENT.yaml\` and run **Onboard Client's AWS Account**."
+            else
+              echo "**Then:** add \`clients/$CLIENT.yaml\` with that account id and merge it, and run"
+              echo "**Onboard Client's AWS Account**."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
