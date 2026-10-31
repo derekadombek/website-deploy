@@ -11,6 +11,16 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
+## v1.7.1
+
+- *Offboard Client's AWS Account*: its last job can be re-run. It skips an environment
+  that's already deleted and reuses an already-pushed `offboard-<client>` branch (and its
+  PR, if open) instead of failing.
+
+**Upgrade notes:**
+- `REGISTER_CI_TOKEN` needs one more permission on the clients repo: Pull requests,
+  Read and write (to open the removal PR).
+
 ## v1.7.0
 
 - *Offboard Client's AWS Account*: also opens the PR that removes `clients/<name>.yaml`,

@@ -43,7 +43,7 @@ on:
         default: false
     secrets:
       REGISTER_CI_TOKEN:
-        description: The clients repo's PAT (Administration, Environments, Contents, Workflows write), to delete the client's GitHub Environment and open the removal PR.
+        description: The clients repo's PAT (Administration, Environments, Contents, Workflows, Pull requests write), to delete the client's GitHub Environment and open the removal PR.
         required: false
 
 permissions:
@@ -281,7 +281,10 @@ jobs:
         if: steps.token.outputs.ok == 'true'
         working-directory: .
         run: |
-          gh api -X DELETE "repos/$GITHUB_REPOSITORY/environments/$CLIENT"
+          # Gone already = a re-run of this job.
+          if gh api "repos/$GITHUB_REPOSITORY/environments/$CLIENT" >/dev/null 2>&1; then
+            gh api -X DELETE "repos/$GITHUB_REPOSITORY/environments/$CLIENT"
+          fi
           echo "- GitHub Environment $CLIENT: deleted" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/checkout@v4 # the calling repo, main
@@ -307,21 +310,23 @@ jobs:
             exit 0
           fi
           branch="offboard-$CLIENT"
+          # A re-run finds the branch from the first try (e.g. the PR step failed): reuse it.
           if gh api "repos/$GITHUB_REPOSITORY/branches/$branch" >/dev/null 2>&1; then
-            echo "::error::Branch $branch already exists (an earlier run's PR?). Merge or delete it, then remove clients/$CLIENT.yaml by hand."
-            exit 1
+            echo "Branch $branch already pushed; reusing it"
+          else
+            git rm -q "clients/$CLIENT.yaml"
+            source pkg/infra/scripts/lib/client.sh
+            client_dropdowns_sync .github/workflows >/dev/null
+            client_dropdowns_check .github/workflows
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git checkout -q -b "$branch"
+            git add clients .github/workflows
+            git commit -q -m "Remove client $CLIENT (offboarded)"
+            git push -q origin "$branch"
           fi
-          git rm -q "clients/$CLIENT.yaml"
-          source pkg/infra/scripts/lib/client.sh
-          client_dropdowns_sync .github/workflows >/dev/null
-          client_dropdowns_check .github/workflows
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -q -b "$branch"
-          git add clients .github/workflows
-          git commit -q -m "Remove client $CLIENT (offboarded)"
-          git push -q origin "$branch"
-          url="$(gh pr create --head "$branch" --title "Remove client $CLIENT (offboarded)" \
+          url="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url // empty')"
+          [ -n "$url" ] || url="$(gh pr create --head "$branch" --title "Remove client $CLIENT (offboarded)" \
             --body "Offboard Client's AWS Account removed access to $CLIENT's account (run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID). This removes its client file and its entries in the client dropdowns.")"
           {
             echo "- clients/$CLIENT.yaml: removal PR opened: $url"
