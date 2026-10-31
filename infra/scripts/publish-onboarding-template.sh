@@ -44,7 +44,7 @@ aws cloudformation validate-template --region "${REGION}" \
 echo "Template: valid"
 
 # --- Bucket: create if missing ------------------------------------------------
-if aws s3api head-bucket --bucket "${TEMPLATE_BUCKET}" 2>/dev/null; then
+if aws s3api head-bucket --bucket "${TEMPLATE_BUCKET}" >/dev/null 2>&1; then
   echo "Bucket: exists"
 else
   echo "Bucket: creating"
