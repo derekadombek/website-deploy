@@ -11,6 +11,19 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
+## v1.9.0
+
+- New *Add Client File* workflow: fill in a form in the clients repo and it writes
+  `clients/<name>.yaml`, checks it like Provision does, adds the name to the client
+  dropdowns and opens the PR. New clients get `state_lock: s3`. It stops if the file
+  already exists.
+- *Client Onboarding AWS Link*: the run summary points to Add Client File for a new client.
+
+**Upgrade notes:**
+- To use the workflow, add `.github/workflows/add-client.yml` to the clients repo
+  (the caller is in `infra/README.md`, *Onboarding a client*). It uses `REGISTER_CI_TOKEN`
+  (Contents, Workflows, Pull requests write), which Offboard already needs.
+
 ## v1.8.0
 
 - New *Client Onboarding AWS Link* workflow: makes a client's One-click Connect AWS link

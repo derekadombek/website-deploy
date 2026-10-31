@@ -89,7 +89,9 @@ are no ARNs to copy between steps.
    creates the state backend + OIDC provider + deploy, Terraform and read-only plan
    roles. They send you their **AWS account id**.
 2. **Add `clients/<name>.yaml`** in the private clients repo (fields:
-   [`clients/README.md`](../clients/README.md)) — PR, merge. Merging runs **Set CI Environment** automatically: it creates the
+   [`clients/README.md`](../clients/README.md)): run **Add Client File** there (it
+   writes and checks the file and opens the PR; caller below), or write it by hand
+   in a PR. Merge it. Merging runs **Set CI Environment** automatically: it creates the
    client's GitHub Environment with `AWS_TF_ROLE_ARN` (built from the account id)
    + `AWS_REGION` (+ you as reviewer, where the GitHub plan allows it).
 3. **Provision** — run **Provision Client's AWS Setup** from the clients repo's `main`.
@@ -110,7 +112,7 @@ stays as the fallback). The client opens a link in their AWS console and clicks
 ([`onboarding/connect-aws.yaml`](onboarding/connect-aws.yaml)) makes a temporary
 `<name>-onboarding` admin role that only the clients repo's `<name>` environment can
 use, until an expiry date, plus the GitHub OIDC provider if the account has none
-(kept on stack delete). Then: add the client file with their account id (step 2),
+(kept on stack delete). Then: add the client file with their account id (step 2, **Add Client File**),
 and run **Onboard Client's AWS Account** in the clients repo. It signs in through the
 onboarding role, runs `grant-access.sh` with everything from the client file, and
 deletes the stack. Then Provision (step 3). Publish the template when it changes
@@ -149,6 +151,83 @@ jobs:
       client: ${{ inputs.client }}
       region: ${{ inputs.region }}
       days: ${{ inputs.days }}
+```
+
+The clients repo's **Add Client File** caller (`.github/workflows/add-client.yml`). It
+only adds: it stops if the file exists. Fields it doesn't ask for keep their defaults;
+add them in the PR. Needs `REGISTER_CI_TOKEN` to push the branch and open the PR.
+
+```yaml
+name: Add Client File
+on:
+  workflow_dispatch:
+    inputs:
+      client:
+        description: Client name (lowercase, dashes)
+        required: true
+      account_id:
+        description: Their 12-digit AWS account id
+        required: true
+      region:
+        default: us-west-2
+      site:
+        description: Host their website here (untick = Onsyte only)
+        type: boolean
+        default: true
+      app_repo:
+        description: Repo that deploys the site (owner/name)
+        default: ""
+      domain:
+        description: Blank = the CloudFront default URL for now
+        default: ""
+      dns:
+        description: Where the domain's DNS lives
+        type: choice
+        options: [external, existing-zone, route53-registrar]
+      hosted_zone:
+        description: Blank = the domain
+        default: ""
+      delegate_from:
+        description: Client whose zone the domain is a subdomain of
+        default: ""
+      www:
+        description: Serve www and redirect it to the apex
+        type: boolean
+        default: true
+      error_page:
+        description: Blank = /index.html; /error.html for multi-page sites
+        default: ""
+      onsyte_subdomain:
+        description: Blank = no Onsyte
+        default: ""
+      onsyte_version:
+        default: ""
+      note:
+        description: One-line comment at the top of the file
+        default: ""
+permissions:
+  contents: read
+jobs:
+  add:
+    uses: derekadombek/website-deploy/.github/workflows/add-client.yml@vX.Y.Z
+    with:
+      package_ref: vX.Y.Z
+      client: ${{ inputs.client }}
+      account_id: ${{ inputs.account_id }}
+      region: ${{ inputs.region }}
+      site: ${{ inputs.site }}
+      app_repo: ${{ inputs.app_repo }}
+      domain: ${{ inputs.domain }}
+      dns: ${{ inputs.dns }}
+      hosted_zone: ${{ inputs.hosted_zone }}
+      delegate_from: ${{ inputs.delegate_from }}
+      www: ${{ inputs.www }}
+      error_page: ${{ inputs.error_page }}
+      onsyte_subdomain: ${{ inputs.onsyte_subdomain }}
+      onsyte_version: ${{ inputs.onsyte_version }}
+      note: ${{ inputs.note }}
+    secrets:
+      REGISTER_CI_TOKEN: ${{ secrets.REGISTER_CI_TOKEN }}
 ```
 
 **Adding a domain later** — edit the client file (`domain`, `dns`), merge, and

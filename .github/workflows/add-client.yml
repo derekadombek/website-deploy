@@ -1,0 +1,219 @@
+name: Add Client File
+
+# Writes clients/<name>.yaml from a form instead of by hand, checks it the way
+# Provision does (client_check), adds the name to every `client` dropdown, and
+# opens the PR in the clients repo. Merging it runs Set CI Environment, which
+# makes the client's GitHub Environment. Then: Onboard, then Provision.
+#
+# Only adds a client: it stops if the file already exists (edit that in a PR).
+# Fields it doesn't ask for (app_branch, ci, state_bucket, lock_table) keep their
+# defaults; add them in the PR if needed. New clients always get state_lock: s3.
+#
+# Needs REGISTER_CI_TOKEN to push the branch and open the PR (GitHub's own token
+# can't push workflow changes, and a PR it opens doesn't run Sync Client Dropdowns).
+# Without it the run summary has the file to add by hand.
+on:
+  workflow_call:
+    inputs:
+      package_ref:
+        description: website-deploy ref to run (the same tag/sha as in your `uses:` line).
+        type: string
+        required: true
+      client:
+        description: Client name (lowercase, dashes). Also their GitHub Environment and resource prefix.
+        type: string
+        required: true
+      account_id:
+        description: Their 12-digit AWS account id.
+        type: string
+        required: true
+      region:
+        description: AWS region.
+        type: string
+        default: us-west-2
+      site:
+        description: Host their website here. false = Onsyte only (needs onsyte_subdomain).
+        type: boolean
+        default: true
+      app_repo:
+        description: Repo that deploys the site (owner/name). Not needed with site false.
+        type: string
+        default: ""
+      domain:
+        description: Their domain. Blank = the CloudFront default URL for now.
+        type: string
+        default: ""
+      dns:
+        description: Where the domain's DNS lives (existing-zone, route53-registrar, external). Only used with a domain.
+        type: string
+        default: external
+      hosted_zone:
+        description: Route 53 zone for the records. Blank = the domain.
+        type: string
+        default: ""
+      delegate_from:
+        description: Client whose zone the domain is a subdomain of (needs dns external).
+        type: string
+        default: ""
+      www:
+        description: Serve www and redirect it to the apex.
+        type: boolean
+        default: true
+      error_page:
+        description: 404 page. Blank = /index.html; /error.html for multi-page sites.
+        type: string
+        default: ""
+      onsyte_subdomain:
+        description: Install Onsyte at <this>.<domain>. Blank = no Onsyte.
+        type: string
+        default: ""
+      onsyte_version:
+        description: Onsyte release Deploy Onsyte ships.
+        type: string
+        default: ""
+      note:
+        description: One-line comment at the top of the file (who they are).
+        type: string
+        default: ""
+    secrets:
+      REGISTER_CI_TOKEN:
+        description: The clients repo's PAT (Contents, Workflows, Pull requests write), to push the branch and open the PR.
+        required: false
+
+permissions:
+  contents: read
+
+# Called from the private clients repo (workflow_call) — it isn't run here. The
+# calling repo is checked out at the workspace root, this package at package_ref
+# into pkg/.
+env:
+  CLIENTS_DIR: ${{ github.workspace }}/clients
+  CLIENT: ${{ inputs.client }}
+
+jobs:
+  add:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      GH_TOKEN: ${{ secrets.REGISTER_CI_TOKEN }}
+    steps:
+      - name: Restrict to owner
+        if: github.actor != 'derekadombek'
+        run: |
+          echo "Only the repo owner may run this workflow (actor: ${{ github.actor }})." >&2
+          exit 1
+      - uses: actions/checkout@v4 # the calling repo, main
+        with:
+          # GitHub's own token can't push workflow changes (the dropdowns).
+          token: ${{ secrets.REGISTER_CI_TOKEN || github.token }}
+      - uses: actions/checkout@v4 # the package, at the caller's pinned ref
+        with:
+          repository: derekadombek/website-deploy
+          ref: ${{ inputs.package_ref }}
+          path: pkg
+
+      - name: Write the client file
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+          REGION: ${{ inputs.region }}
+          SITE: ${{ inputs.site }}
+          APP_REPO: ${{ inputs.app_repo }}
+          DOMAIN: ${{ inputs.domain }}
+          DNS: ${{ inputs.dns }}
+          HOSTED_ZONE: ${{ inputs.hosted_zone }}
+          DELEGATE_FROM: ${{ inputs.delegate_from }}
+          WWW: ${{ inputs.www }}
+          ERROR_PAGE: ${{ inputs.error_page }}
+          ONSYTE_SUBDOMAIN: ${{ inputs.onsyte_subdomain }}
+          ONSYTE_VERSION: ${{ inputs.onsyte_version }}
+          NOTE: ${{ inputs.note }}
+        run: |
+          set -euo pipefail
+          [[ "$CLIENT" =~ ^[a-z0-9][a-z0-9-]{0,40}[a-z0-9]$ ]] \
+            || { echo "::error::client: lowercase letters, numbers and dashes only"; exit 1; }
+          f="clients/$CLIENT.yaml"
+          if [ -f "$f" ]; then
+            echo "::error::$f already exists. To change it, edit it in a PR."
+            exit 1
+          fi
+          # Every value lands in flat `key: value` lines read with sed: no spaces,
+          # quotes, colons or #, so a typo can't change another field.
+          bad=""
+          for v in ACCOUNT_ID REGION APP_REPO DOMAIN DNS HOSTED_ZONE DELEGATE_FROM ERROR_PAGE ONSYTE_SUBDOMAIN ONSYTE_VERSION; do
+            [[ "${!v}" =~ ^[A-Za-z0-9._/-]*$ ]] || bad+=" $v"
+          done
+          [ -z "$bad" ] || { echo "::error::only letters, digits and . _ / - allowed in:$bad"; exit 1; }
+          [[ "$NOTE" != *$'\n'* ]] || { echo "::error::note: one line"; exit 1; }
+          if [ -n "$DOMAIN" ]; then
+            case "$DNS" in
+              existing-zone | route53-registrar | external) ;;
+              *) echo "::error::dns must be existing-zone, route53-registrar or external"; exit 1 ;;
+            esac
+          fi
+
+          {
+            echo "# ${NOTE:-$CLIENT}"
+            echo "provider: aws"
+            echo "account_id: \"$ACCOUNT_ID\""
+            echo "region: $REGION"
+            [ "$SITE" = "true" ] || echo "site: false"
+            [ -z "$APP_REPO" ] || echo "app_repo: $APP_REPO"
+            echo "domain: \"$DOMAIN\""
+            [ -z "$HOSTED_ZONE" ] || echo "hosted_zone: $HOSTED_ZONE"
+            [ -z "$DOMAIN" ] || echo "dns: $DNS"
+            [ -z "$DELEGATE_FROM" ] || echo "delegate_from: $DELEGATE_FROM"
+            [ "$SITE" != "true" ] || echo "www: $WWW"
+            [ -z "$ERROR_PAGE" ] || echo "error_page: $ERROR_PAGE"
+            echo "state_lock: s3"
+            [ -z "$ONSYTE_SUBDOMAIN" ] || echo "onsyte_subdomain: $ONSYTE_SUBDOMAIN"
+            [ -z "$ONSYTE_VERSION" ] || echo "onsyte_version: $ONSYTE_VERSION"
+          } > "$f"
+          cat "$f"
+
+      - name: Check it
+        run: |
+          set -euo pipefail
+          source pkg/infra/scripts/lib/client.sh
+          client_check "$CLIENT"
+          client_dropdowns_sync .github/workflows
+          client_dropdowns_check .github/workflows
+          {
+            echo "### clients/$CLIENT.yaml"
+            echo '```yaml'
+            cat "clients/$CLIENT.yaml"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open the PR
+        run: |
+          set -euo pipefail
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::No REGISTER_CI_TOKEN passed: add the file above in a PR by hand (Sync Client Dropdowns updates the dropdowns)."
+            echo "**No REGISTER_CI_TOKEN:** add the file above in a PR by hand." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          branch="add-client-$CLIENT"
+          # A re-run finds the branch from the first try (e.g. the PR step failed): reuse it.
+          if gh api "repos/$GITHUB_REPOSITORY/branches/$branch" >/dev/null 2>&1; then
+            echo "Branch $branch already pushed; reusing it (delete it to start over)"
+          else
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git checkout -q -b "$branch"
+            git add clients .github/workflows
+            git commit -q -m "Add client $CLIENT"
+            git push -q origin "$branch"
+          fi
+          url="$(gh pr list --head "$branch" --state open --json url --jq '.[0].url // empty')"
+          [ -n "$url" ] || url="$(gh pr create --head "$branch" --title "Add client $CLIENT" \
+            --body "Added by Add Client File (run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID): clients/$CLIENT.yaml and its entries in the client dropdowns. Merging runs Set CI Environment, which creates the $CLIENT environment.")"
+          {
+            echo
+            echo "**PR:** $url"
+            echo
+            echo "**Next:**"
+            echo "1. Read the file and merge: \`gh pr merge $branch --squash --delete-branch\`."
+            echo "   Set CI Environment then creates the $CLIENT environment."
+            echo "2. Once they've created the stack from their Connect AWS link: run **Onboard Client's AWS Account**."
+            echo "3. Run **Provision Client's AWS Setup** (plan, then apply)."
+          } >> "$GITHUB_STEP_SUMMARY"

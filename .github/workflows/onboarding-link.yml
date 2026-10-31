@@ -5,8 +5,8 @@ name: Client Onboarding AWS Link
 # summary, ready to send. From a terminal:
 #   gh run view <id> -R <clients repo> --log | grep -o 'https://[^ ]*quickcreate[^ ]*'
 # The client signs in to their AWS console, opens it, ticks the IAM box and
-# clicks Create stack, then sends back their account id. Next: their client file,
-# then Onboard Client's AWS Account.
+# clicks Create stack, then sends back their account id. Next: their client file
+# (Add Client File), then Onboard Client's AWS Account.
 #
 # Needs no AWS access and no client file: a new client won't have one yet. When
 # clients/<name>.yaml exists, its region is the default.
@@ -108,7 +108,7 @@ jobs:
             if [ -f "$CLIENTS_DIR/$CLIENT.yaml" ]; then
               echo "**Then:** check the account id matches \`clients/$CLIENT.yaml\` and run **Onboard Client's AWS Account**."
             else
-              echo "**Then:** add \`clients/$CLIENT.yaml\` with that account id and merge it, and run"
+              echo "**Then:** run **Add Client File** with that account id, merge its PR, and run"
               echo "**Onboard Client's AWS Account**."
             fi
           } >> "$GITHUB_STEP_SUMMARY"

@@ -10,7 +10,8 @@ it's also the GitHub Environment name, the Terraform role trust
 (`environment:<name>`), and the prefix for every resource (`<name>-site-<acct>`,
 `<name>-terraform`, `<name>-tf-state`, …).
 
-Adding a client = adding this file. Changing their domain = editing it.
+Adding a client = adding this file (the clients repo's **Add Client File** workflow
+writes it from a form and opens the PR). Changing their domain = editing it.
 
 The files can also live outside this repo: set `CLIENTS_DIR` to their folder and
 the scripts (and Terraform, via `infra/scripts/tf.sh`) read them from there.
