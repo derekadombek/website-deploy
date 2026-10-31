@@ -183,6 +183,7 @@ on:
       dns:
         description: Where the domain's DNS lives
         type: choice
+        default: external
         options: [external, existing-zone, route53-registrar]
       hosted_zone:
         description: Blank = the domain
