@@ -131,7 +131,8 @@ the name to confirm). It removes your access and leaves the site running: delete
 locks `<name>-terraform` (a trust nobody can use, no permissions; a role can't delete
 itself, so the client may delete the empty role), deletes the GitHub Environment, and
 leaves `OFFBOARDED.md` in the state bucket for whoever manages the site next. The state
-bucket, the OIDC provider and Onsyte's roles stay. Then remove the client file in a PR.
+bucket, the OIDC provider and Onsyte's roles stay. It ends by opening the PR that
+removes the client file (dropdowns already updated); merge it.
 The run summary has a note to paste to the client. To just stop billing, run
 **Teardown Client's AWS Setup** (destroys the site, keeps the access config).
 
