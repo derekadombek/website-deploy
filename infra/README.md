@@ -125,10 +125,15 @@ infra/scripts/onboarding-link.sh --client acme --region us-west-2
 re-run step 3. It's an additive in-place change (CloudFront gets the alias + ACM
 cert; content untouched).
 
-**Offboarding** is clean: the client deletes the access config (OIDC provider +
-two roles + state) and revokes your admin on their app repo, and you're fully out
-— nothing was ever stored on your side. To just stop billing, run **Teardown
-Client's AWS Setup** (destroys the site, keeps the access config).
+**Offboarding**: run **Offboard Client's AWS Account** in the clients repo (retype
+the name to confirm). It removes your access and leaves the site running: deletes the
+`-plan`, `-github-deploy`, `-dns-delegation` (and any leftover `-onboarding`) roles,
+locks `<name>-terraform` (a trust nobody can use, no permissions; a role can't delete
+itself, so the client may delete the empty role), deletes the GitHub Environment, and
+leaves `OFFBOARDED.md` in the state bucket for whoever manages the site next. The state
+bucket, the OIDC provider and Onsyte's roles stay. Then remove the client file in a PR.
+The run summary has a note to paste to the client. To just stop billing, run
+**Teardown Client's AWS Setup** (destroys the site, keeps the access config).
 
 ### DNS: client already on Route 53, or not yet
 
