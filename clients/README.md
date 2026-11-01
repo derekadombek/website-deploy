@@ -46,7 +46,16 @@ onsyte_subdomain: onsyte         # [none] install Onsyte at onsyte.<domain> (nee
                                  # needs grant-access from v1.3.0 or later; see "Onsyte
                                  # installs" below for the one-time steps)
 onsyte_version: v0.1.0           # Onsyte release that Deploy Onsyte (clients repo) ships
+api_origin: abc123.execute-api.us-west-2.amazonaws.com
+                                 # [none] an API host that serves api_path on the
+                                 # site's CloudFront (uncached); host name only
+api_path: /c/*                   # [none] the path pattern sent there; set both or neither
 ```
+
+`api_origin` / `api_path` — one path on the site goes to an API instead of the bucket,
+on the same domain (e.g. a sign-in app at `/c/*`). Everything else stays on S3. The
+API should answer 401 or 404 rather than 403: CloudFront swaps every 403 for the
+`error_page`.
 
 `state_lock` — Terraform's DynamoDB locking is deprecated; the S3 lockfile
 (`use_lockfile`) replaces it. **New clients: set `state_lock: s3`** and run

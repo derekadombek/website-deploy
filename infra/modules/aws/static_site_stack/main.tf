@@ -112,6 +112,8 @@ module "static_site" {
   extra_aliases               = local.www_enabled ? [local.www_domain] : []
   viewer_request_function_arn = aws_cloudfront_function.router.arn
   error_page_path             = var.error_page_path
+  api_origin                  = var.api_origin
+  api_path_pattern            = var.api_path_pattern
 }
 
 # Point the domain at CloudFront (only when managing DNS).

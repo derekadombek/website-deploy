@@ -50,6 +50,8 @@ module "site" {
   registrar_in_route53 = local.dns == "route53-registrar"
   manage_www           = try(local.cfg.www, true)
   error_page_path      = try(local.cfg.error_page, "/index.html")
+  api_origin           = try(local.cfg.api_origin, "")
+  api_path_pattern     = try(local.cfg.api_path, "")
 }
 
 # Clients from before `site` existed have the stack at module.site.

@@ -83,6 +83,16 @@ client_check() {
       esac
     fi
 
+    local api_origin api_path
+    api_origin="$(client_get "${name}" api_origin)"
+    api_path="$(client_get "${name}" api_path)"
+    if [ -n "${api_origin}${api_path}" ]; then
+      [ -n "${api_origin}" ] && [ -n "${api_path}" ] || errs+="  api_origin and api_path go together\n"
+      [ -z "${api_origin}" ] || echo "${api_origin}" | grep -qE '^[a-z0-9.-]+\.[a-z]{2,}$' || errs+="  api_origin must be a host name, no https:// or path\n"
+      [ -z "${api_path}" ] || echo "${api_path}" | grep -qE '^/[A-Za-z0-9_./-]+\*$' || errs+="  api_path must be a path prefix ending in * (e.g. /c/*)\n"
+      [ "${site}" != "false" ] || errs+="  api_origin needs site: true (it's a route on the site's CloudFront)\n"
+    fi
+
     # No site: the account only runs Onsyte, in its own zone (onsyte.<domain> by
     # default) — the client's site and DNS stay wherever they are.
     if [ "${site}" = "false" ]; then

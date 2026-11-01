@@ -62,11 +62,28 @@ data "aws_cloudfront_cache_policy" "optimized" {
   name = "Managed-CachingOptimized"
 }
 
+data "aws_cloudfront_cache_policy" "disabled" {
+  count = local.api_route ? 1 : 0
+  name  = "Managed-CachingDisabled"
+}
+
+# Forwards cookies, query strings and headers, but not Host: API Gateway routes
+# on its own host name.
+data "aws_cloudfront_origin_request_policy" "all_viewer_except_host" {
+  count = local.api_route ? 1 : 0
+  name  = "Managed-AllViewerExceptHostHeader"
+}
+
 locals {
   # A custom domain (alias + ACM cert) is attached only when a cert ARN is
   # supplied. Without one, CloudFront serves its default *.cloudfront.net domain
   # with the default certificate — the "ship S3 only" recipe (manage_dns=false).
   custom_domain = var.acm_certificate_arn != ""
+
+  # Optional second origin: one path pattern (e.g. a sign-in app at /c/*) goes
+  # to an API instead of the bucket. Everything else stays on S3.
+  api_route     = var.api_origin != "" && var.api_path_pattern != ""
+  api_origin_id = "api-${var.api_origin}"
 }
 
 resource "aws_cloudfront_distribution" "site" {
@@ -83,6 +100,21 @@ resource "aws_cloudfront_distribution" "site" {
     origin_access_control_id = aws_cloudfront_origin_access_control.site.id
   }
 
+  dynamic "origin" {
+    for_each = local.api_route ? [1] : []
+    content {
+      domain_name = var.api_origin
+      origin_id   = local.api_origin_id
+
+      custom_origin_config {
+        http_port              = 80
+        https_port             = 443
+        origin_protocol_policy = "https-only"
+        origin_ssl_protocols   = ["TLSv1.2"]
+      }
+    }
+  }
+
   default_cache_behavior {
     target_origin_id       = "s3-${aws_s3_bucket.site.id}"
     viewer_protocol_policy = "redirect-to-https"
@@ -97,6 +129,21 @@ resource "aws_cloudfront_distribution" "site" {
         event_type   = "viewer-request"
         function_arn = var.viewer_request_function_arn
       }
+    }
+  }
+
+  # No viewer-request function here: the clean-URL rewrite is for S3 objects.
+  dynamic "ordered_cache_behavior" {
+    for_each = local.api_route ? [1] : []
+    content {
+      path_pattern             = var.api_path_pattern
+      target_origin_id         = local.api_origin_id
+      viewer_protocol_policy   = "redirect-to-https"
+      allowed_methods          = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
+      cached_methods           = ["GET", "HEAD"]
+      cache_policy_id          = data.aws_cloudfront_cache_policy.disabled[0].id
+      origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host[0].id
+      compress                 = true
     }
   }
 
