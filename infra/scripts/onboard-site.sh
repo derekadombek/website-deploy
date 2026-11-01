@@ -107,7 +107,17 @@ EOF
 
 create_zone() {
   echo "==> creating hosted zone (if this env creates one)"
-  # No-op when create_hosted_zone = false (the resource has zero instances).
+  # The targeted apply is only for a zone that doesn't exist yet. Skip it otherwise: on an
+  # older state with pending `moved` blocks (module.site → module.site[0], v1.8.0) Terraform
+  # refuses any -target run, and the full apply in `finish` handles the moves.
+  case "$(client_get "${ENV_NAME}" dns existing-zone)" in
+    route53-registrar | external) ;;
+    *) echo "    none: this client uses an existing zone" >&2; return 0 ;;
+  esac
+  if terraform state list 2>/dev/null | grep -qE 'aws_route53_zone\.(primary|app)(\[0\])?$'; then
+    echo "    already in state, nothing to create" >&2
+    return 0
+  fi
   local targets=(-target='module.site[0].aws_route53_zone.primary' -target='module.site[0].aws_route53domains_registered_domain.this')
   [ "$(client_get "${ENV_NAME}" site true)" = "false" ] && targets=(-target='aws_route53_zone.app')
   # Output to stderr: the logs, not Provision's run summary (it tees stdout there).

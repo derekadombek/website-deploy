@@ -11,6 +11,12 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
+## v1.10.1
+
+- Provision: the zone step skips its targeted apply when the client uses an existing zone or
+  its zone is already in state. Clients last applied before v1.8.0 failed there with
+  "Moved resource instances excluded by targeting".
+
 ## v1.10.0
 
 - Optional `api_origin` + `api_path` in a client file: one path on the site (e.g. `/c/*`)
