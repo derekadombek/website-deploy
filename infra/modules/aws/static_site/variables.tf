@@ -46,3 +46,20 @@ variable "error_page_path" {
   type        = string
   default     = "/index.html"
 }
+
+variable "api_origin" {
+  description = <<-EOT
+    Optional API host (e.g. an API Gateway "<id>.execute-api.<region>.amazonaws.com")
+    that serves api_path_pattern on this distribution, uncached, HTTPS only. Empty = none.
+    The 403 → error page mapping covers every path, so the API should answer 401/404,
+    not 403.
+  EOT
+  type        = string
+  default     = ""
+}
+
+variable "api_path_pattern" {
+  description = "CloudFront path pattern sent to api_origin (e.g. \"/c/*\"). Set with api_origin."
+  type        = string
+  default     = ""
+}

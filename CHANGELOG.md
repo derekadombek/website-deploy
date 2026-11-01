@@ -11,6 +11,10 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
+- Optional `api_origin` + `api_path` in a client file: one path on the site (e.g. `/c/*`)
+  goes to an API (API Gateway or similar) on the same domain, uncached. Everything else
+  stays on S3. `client_check` checks both fields. No change for clients without them.
+
 ## v1.9.0
 
 - New *Add Client File* workflow: fill in a form in the clients repo and it writes

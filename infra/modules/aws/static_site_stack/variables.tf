@@ -65,3 +65,15 @@ variable "error_page_path" {
   type        = string
   default     = "/index.html"
 }
+
+variable "api_origin" {
+  description = "Optional API host that serves api_path_pattern on the site's distribution (see static_site). Empty = none."
+  type        = string
+  default     = ""
+}
+
+variable "api_path_pattern" {
+  description = "CloudFront path pattern sent to api_origin (e.g. \"/c/*\")."
+  type        = string
+  default     = ""
+}
