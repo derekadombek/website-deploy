@@ -13,7 +13,7 @@ name: Onboard Client's AWS Account
 # grant-access needs comes from the client file:
 #   - deploy role: app_repo (none when site: false). Its numeric ids are looked
 #     up for GitHub's immutable subject; a private app repo needs the
-#     APP_REPO_READ_TOKEN secret for that.
+#     APP_REPO_READ_TOKEN secret for that, unless the file has app_repo_ids.
 #   - lock table: only for state_lock dynamodb / both.
 #   - delegation role: when another client has delegate_from: <name>.
 #
@@ -100,13 +100,18 @@ jobs:
             app_repo="$(client_get "$CLIENT" app_repo)"
             [ -n "$app_repo" ] || { echo "::error::clients/$CLIENT.yaml has a site but no app_repo"; exit 1; }
             # Without the ids the deploy role would lose the immutable subject
-            # newer repos sign in with, so don't carry on without them.
-            echo "Looking up $app_repo with $TOKEN_NAME"
-            app_ids="$(gh api "repos/$app_repo" --jq '"\(.owner.id)/\(.id)"' 2>lookup.err)" || {
-              echo "GitHub said: $(cat lookup.err)"
-              echo "::error::Can't read $app_repo to look up its ids. For a private repo, the APP_REPO_READ_TOKEN secret must be a fine-grained PAT whose repository access includes $app_repo (404 = not included or wrong owner, 401 = bad or expired token)."
-              exit 1
-            }
+            # newer repos sign in with, so don't carry on without them. A client file
+            # with app_repo_ids needs no lookup, which is how a client's own private
+            # repo works: no token here can read that.
+            app_ids="$(client_get "$CLIENT" app_repo_ids)"
+            if [ -z "$app_ids" ]; then
+              echo "Looking up $app_repo with $TOKEN_NAME"
+              app_ids="$(gh api "repos/$app_repo" --jq '"\(.owner.id)/\(.id)"' 2>lookup.err)" || {
+                echo "GitHub said: $(cat lookup.err)"
+                echo "::error::Can't read $app_repo to look up its ids. Either add app_repo_ids to the client file, or for a private repo the APP_REPO_READ_TOKEN secret must be a fine-grained PAT whose repository access includes $app_repo (404 = not included or wrong owner, 401 = bad or expired token)."
+                exit 1
+              }
+            fi
           fi
 
           lock_table=""

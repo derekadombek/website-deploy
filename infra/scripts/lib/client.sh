@@ -66,6 +66,11 @@ client_check() {
     if [ "${site}" != "false" ] || [ -n "$(client_get "${name}" app_repo)" ]; then
       client_get "${name}" app_repo | grep -qE '^[^/]+/[^/]+$' || errs+="  app_repo must be owner/name\n"
     fi
+    local app_ids; app_ids="$(client_get "${name}" app_repo_ids)"
+    if [ -n "${app_ids}" ]; then
+      echo "${app_ids}" | grep -qE '^[0-9]+/[0-9]+$' || errs+="  app_repo_ids must be <owner id>/<repo id>, both numbers\n"
+      [ -n "$(client_get "${name}" app_repo)" ] || errs+="  app_repo_ids needs app_repo\n"
+    fi
     if [ -n "$(client_get "${name}" domain)" ]; then
       case "$(client_get "${name}" dns existing-zone)" in
         existing-zone | route53-registrar | external) ;;

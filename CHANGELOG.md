@@ -11,6 +11,15 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
+## v1.11.0
+
+- Optional `app_repo_ids` in a client file (`<owner id>/<repo id>`): Onboard uses them instead of
+  looking the repo up, so a client's own private repo works. Add Client File takes it as an input,
+  and `client_check` checks it. No change for clients without it.
+
+  **Upgrade notes:** to use it through Add Client File, add `app_repo_ids` to the inputs and `with:`
+  of the clients repo's `add-client.yml`, and pass it from the client portal's relay.
+
 ## v1.10.1
 
 - Provision: the zone step skips its targeted apply when the client uses an existing zone or
