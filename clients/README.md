@@ -23,6 +23,7 @@ provider: aws                    # which infra/sites/<provider> root builds it
 account_id: "123456789012"       # quoted — the client's AWS account
 region: us-west-2
 app_repo: acme-co/website        # repo that deploys the site (owner/name); not with site: false
+app_repo_ids: 1234/5678          # [looked up] <owner id>/<repo id>; lets Onboard skip reading a private repo
 domain: acme.com                 # "" = serve the CloudFront default URL for now
 dns: existing-zone               # only when domain is set — see below
 ```

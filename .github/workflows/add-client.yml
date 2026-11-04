@@ -39,6 +39,10 @@ on:
         description: Repo that deploys the site (owner/name). Not needed with site false.
         type: string
         default: ""
+      app_repo_ids:
+        description: That repo's numeric ids (<owner id>/<repo id>). Blank = Onboard looks them up.
+        type: string
+        default: ""
       domain:
         description: Their domain. Blank = the CloudFront default URL for now.
         type: string
@@ -118,6 +122,7 @@ jobs:
           REGION: ${{ inputs.region }}
           SITE: ${{ inputs.site }}
           APP_REPO: ${{ inputs.app_repo }}
+          APP_REPO_IDS: ${{ inputs.app_repo_ids }}
           DOMAIN: ${{ inputs.domain }}
           DNS: ${{ inputs.dns }}
           HOSTED_ZONE: ${{ inputs.hosted_zone }}
@@ -139,7 +144,7 @@ jobs:
           # Every value lands in flat `key: value` lines read with sed: no spaces,
           # quotes, colons or #, so a typo can't change another field.
           bad=""
-          for v in ACCOUNT_ID REGION APP_REPO DOMAIN DNS HOSTED_ZONE DELEGATE_FROM ERROR_PAGE ONSYTE_SUBDOMAIN ONSYTE_VERSION; do
+          for v in ACCOUNT_ID REGION APP_REPO APP_REPO_IDS DOMAIN DNS HOSTED_ZONE DELEGATE_FROM ERROR_PAGE ONSYTE_SUBDOMAIN ONSYTE_VERSION; do
             [[ "${!v}" =~ ^[A-Za-z0-9._/-]*$ ]] || bad+=" $v"
           done
           [ -z "$bad" ] || { echo "::error::only letters, digits and . _ / - allowed in:$bad"; exit 1; }
@@ -158,6 +163,7 @@ jobs:
             echo "region: $REGION"
             [ "$SITE" = "true" ] || echo "site: false"
             [ -z "$APP_REPO" ] || echo "app_repo: $APP_REPO"
+            [ -z "$APP_REPO_IDS" ] || echo "app_repo_ids: $APP_REPO_IDS"
             echo "domain: \"$DOMAIN\""
             [ -z "$HOSTED_ZONE" ] || echo "hosted_zone: $HOSTED_ZONE"
             [ -z "$DOMAIN" ] || echo "dns: $DNS"
