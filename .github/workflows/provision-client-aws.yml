@@ -333,7 +333,9 @@ jobs:
         run: |
           set -o pipefail # else tee's success hides a failed script
           infra/scripts/onboard-site.sh --phase create-zone "$CLIENT" | tee -a "$GITHUB_STEP_SUMMARY"
-          ns=$(infra/scripts/tf.sh "$CLIENT" output -json hosted_zone_name_servers | jq -r '.[]' | tr '\n' ' ')
+          # No output yet on a first run with no zone to create (no domain, or an existing zone).
+          zone_ns=$(infra/scripts/tf.sh "$CLIENT" output -json hosted_zone_name_servers 2>/dev/null) || zone_ns='[]'
+          ns=$(echo "$zone_ns" | jq -r '.[]' | tr '\n' ' ')
           echo "ns=$ns" >> "$GITHUB_OUTPUT"
 
       # Subdomain of another client's zone → write the NS record there.
