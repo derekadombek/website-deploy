@@ -11,6 +11,11 @@ Format: newest first. Unreleased changes go under `## Unreleased` until tagged.
 
 ## Unreleased
 
+## v1.11.1
+
+- Provision: a first run with no zone to create (no domain, or an existing zone) no longer stops at
+  the zone step. Nothing had been applied, so the name-server output didn't exist yet.
+
 ## v1.11.0
 
 - Optional `app_repo_ids` in a client file (`<owner id>/<repo id>`): Onboard uses them instead of
